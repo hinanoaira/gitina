@@ -132,14 +132,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Delegate to git-http-backend using net/http/cgi
+	absRepoRoot, err := filepath.Abs(h.cfg.Server.RepoRoot)
+	if err != nil {
+		absRepoRoot = h.cfg.Server.RepoRoot
+	}
+
 	cgiHandler := &cgi.Handler{
 		Path: h.gitBackend,
-		Dir:  h.cfg.Server.RepoRoot,
+		Dir:  absRepoRoot,
 		Env: []string{
-			"GIT_PROJECT_ROOT=" + h.cfg.Server.RepoRoot,
+			"GIT_PROJECT_ROOT=" + absRepoRoot,
 			"GIT_HTTP_EXPORT_ALL=1",
 			"PATH_INFO=/" + parsed.RepoPath + "/" + parsed.SubPath,
 			"REMOTE_USER=" + username,
+			"GIT_CONFIG_COUNT=1",
+			"GIT_CONFIG_KEY_0=safe.directory",
+			"GIT_CONFIG_VALUE_0=*",
 		},
 	}
 
