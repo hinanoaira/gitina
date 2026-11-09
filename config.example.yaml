@@ -1,0 +1,52 @@
+# Server Configuration
+server:
+  listen: ":8080"
+  base_url: "https://git.hns.jp"
+  repo_root: "./data/repositories"
+  jwt_secret: "replace-with-a-very-long-random-secret-key"
+
+# Git LFS Configuration
+lfs:
+  storage: "local" # Choose: "local" or "s3"
+  local:
+    path: "./data/lfs"
+  s3:
+    endpoint: "https://s3.ap-northeast-1.amazonaws.com" # Or Cloudflare R2: https://<account_id>.r2.cloudflarestorage.com
+    region: "ap-northeast-1"
+    bucket: "gitina-lfs"
+    access_key_id: "YOUR_ACCESS_KEY"
+    secret_access_key: "YOUR_SECRET_KEY"
+    use_path_style: false
+
+# GitHub OAuth Application Configuration
+github:
+  client_id: "Iv1.xxxxxxxxxxxx"
+  client_secret: "xxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Administrators (GitHub Usernames)
+# Admins have full read-write access to ALL repositories.
+admins:
+  - "hinanoaira"
+
+# Repository Access Control (ACL)
+# Repositories are matched by exact path or wildcard glob (e.g. *, **).
+repositories:
+  # Public repository: Anyone can clone/fetch anonymously.
+  # Only authorized collaborators or admins can push.
+  - path: "open-source/*"
+    public: true
+    collaborators:
+      alice: "rw"
+
+  # Deeply nested private repository
+  - path: "path/to/directory.git"
+    public: false
+    collaborators:
+      alice: "rw"
+      bob: "ro"
+
+  # Single private repository
+  - path: "fuga.git"
+    public: false
+    collaborators:
+      charlie: "rw"
