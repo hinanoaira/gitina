@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -91,6 +92,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Server.RepoRoot == "" {
 		cfg.Server.RepoRoot = "./data/repositories"
+	}
+	if absRoot, err := filepath.Abs(cfg.Server.RepoRoot); err == nil {
+		cfg.Server.RepoRoot = absRoot
 	}
 	if cfg.Server.JWTSecret == "" {
 		return nil, fmt.Errorf("server.jwt_secret is required")
