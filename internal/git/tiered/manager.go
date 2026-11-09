@@ -101,8 +101,13 @@ func (m *Manager) Acquire(ctx context.Context, repoPath string) (func(), error) 
 		return release, nil
 	}
 
-	// 2. Not in local cache. If tiered storage is not enabled, return and let caller git init.
+	// 2. Not in local cache. If tiered storage is not enabled, initialize bare repo locally.
 	if !m.IsTiered() {
+		if err := initBareRepo(fullLocalPath); err != nil {
+			release()
+			return nil, fmt.Errorf("failed to auto-init repository: %w", err)
+		}
+		touch(headPath)
 		return release, nil
 	}
 
@@ -133,22 +138,29 @@ func (m *Manager) Acquire(ctx context.Context, repoPath string) (func(), error) 
 		touch(headPath)
 	} else {
 		// New repository: initialize bare repo locally
-		if err := os.MkdirAll(fullLocalPath, 0755); err != nil {
+		if err := initBareRepo(fullLocalPath); err != nil {
 			release()
-			return nil, err
+			return nil, fmt.Errorf("failed to auto-init new repository: %w", err)
 		}
-		cmd := exec.Command("git", "init", "--bare")
-		cmd.Dir = fullLocalPath
-		if out, err := cmd.CombinedOutput(); err != nil {
-			release()
-			return nil, fmt.Errorf("git init --bare failed: %s: %w", string(out), err)
-		}
-		_ = exec.Command("git", "-C", fullLocalPath, "symbolic-ref", "HEAD", "refs/heads/main").Run()
-		_ = exec.Command("git", "-C", fullLocalPath, "config", "http.receivepack", "true").Run()
 		log.Printf("[Tiered] Initialized new repository %q locally", repoPath)
+		touch(headPath)
 	}
 
 	return release, nil
+}
+
+func initBareRepo(fullLocalPath string) error {
+	if err := os.MkdirAll(fullLocalPath, 0755); err != nil {
+		return err
+	}
+	cmd := exec.Command("git", "init", "--bare")
+	cmd.Dir = fullLocalPath
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("git init --bare failed: %s: %w", string(out), err)
+	}
+	_ = exec.Command("git", "-C", fullLocalPath, "symbolic-ref", "HEAD", "refs/heads/main").Run()
+	_ = exec.Command("git", "-C", fullLocalPath, "config", "http.receivepack", "true").Run()
+	return nil
 }
 
 // Sync uploads the updated repository bundle to S3.
