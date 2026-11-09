@@ -12,6 +12,7 @@ import (
 	"gitina/internal/auth"
 	"gitina/internal/config"
 	"gitina/internal/git"
+	"gitina/internal/git/tiered"
 	"gitina/internal/lfs"
 )
 
@@ -64,13 +65,19 @@ func main() {
 
 	lfsHandler := lfs.NewHandler(cfg, storage, aclMgr, gcmHandler)
 
-	// 4. Git Smart HTTP Handler
-	gitHandler, err := git.NewHandler(cfg, aclMgr, gcmHandler, lfsHandler)
+	// 4. Tiered Storage Manager (S3 as master, local SSD as LRU cache)
+	tieredMgr, err := tiered.NewManager(context.Background(), cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize tiered storage manager: %v", err)
+	}
+
+	// 5. Git Smart HTTP Handler
+	gitHandler, err := git.NewHandler(cfg, aclMgr, gcmHandler, lfsHandler, tieredMgr)
 	if err != nil {
 		log.Fatalf("Failed to initialize git handler: %v", err)
 	}
 
-	// 5. Root Multiplexer
+	// 6. Root Multiplexer
 	mux := http.NewServeMux()
 
 	// GCM / Gitea OAuth2 endpoints

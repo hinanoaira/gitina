@@ -11,6 +11,7 @@ import (
 	"gitina/internal/acl"
 	"gitina/internal/auth"
 	"gitina/internal/config"
+	"gitina/internal/git/tiered"
 	"gitina/internal/lfs"
 )
 
@@ -19,10 +20,11 @@ type Handler struct {
 	aclMgr     *acl.Manager
 	gcmHandler *auth.GCMHandler
 	lfsHandler *lfs.Handler
+	tieredMgr  *tiered.Manager
 	gitBackend string
 }
 
-func NewHandler(cfg *config.Config, aclMgr *acl.Manager, gcmHandler *auth.GCMHandler, lfsHandler *lfs.Handler) (*Handler, error) {
+func NewHandler(cfg *config.Config, aclMgr *acl.Manager, gcmHandler *auth.GCMHandler, lfsHandler *lfs.Handler, tieredMgr *tiered.Manager) (*Handler, error) {
 	// Verify git executable is available in PATH
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, fmt.Errorf("git binary not found in PATH: %w", err)
@@ -42,6 +44,7 @@ func NewHandler(cfg *config.Config, aclMgr *acl.Manager, gcmHandler *auth.GCMHan
 		aclMgr:     aclMgr,
 		gcmHandler: gcmHandler,
 		lfsHandler: lfsHandler,
+		tieredMgr:  tieredMgr,
 		gitBackend: gitBackend,
 	}, nil
 }
@@ -111,11 +114,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Ensure bare repository exists (auto-initialization)
-	fullRepoPath := filepath.Join(h.cfg.Server.RepoRoot, parsed.RepoPath)
-	if err := EnsureRepo(fullRepoPath); err != nil {
-		http.Error(w, fmt.Sprintf("failed to initialize repository: %v", err), http.StatusInternalServerError)
-		return
+	// 3. Acquire repository (tiered storage restore / local lock)
+	if h.tieredMgr != nil {
+		release, err := h.tieredMgr.Acquire(r.Context(), parsed.RepoPath)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to acquire repository: %v", err), http.StatusInternalServerError)
+			return
+		}
+		defer release()
+	} else {
+		// Fallback: Ensure bare repository exists locally
+		fullRepoPath := filepath.Join(h.cfg.Server.RepoRoot, parsed.RepoPath)
+		if err := EnsureRepo(fullRepoPath); err != nil {
+			http.Error(w, fmt.Sprintf("failed to initialize repository: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// 4. Delegate to git-http-backend using net/http/cgi
@@ -131,4 +144,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cgiHandler.ServeHTTP(w, r)
+
+	// 5. If it was a push (write), sync updated bundle to S3
+	if isWrite && h.tieredMgr != nil {
+		_ = h.tieredMgr.Sync(r.Context(), parsed.RepoPath)
+	}
 }

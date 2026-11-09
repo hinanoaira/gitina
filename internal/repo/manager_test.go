@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,10 +28,11 @@ func TestRepoManager(t *testing.T) {
 		}
 	}
 
-	mgr := NewManager(tempDir)
+	ctx := context.Background()
+	mgr := NewManager(tempDir, nil)
 
 	// 1. List
-	list, err := mgr.List()
+	list, err := mgr.List(ctx)
 	if err != nil {
 		t.Fatalf("List() error: %v", err)
 	}
@@ -39,14 +41,14 @@ func TestRepoManager(t *testing.T) {
 	}
 
 	// 2. Remove (soft delete to trash)
-	msg, err := mgr.Remove("path/to/first.git", false)
+	msg, err := mgr.Remove(ctx, "path/to/first.git", false)
 	if err != nil {
 		t.Fatalf("Remove() error: %v", err)
 	}
 	t.Logf("Remove result: %s", msg)
 
 	// List again, should have 1
-	list, err = mgr.List()
+	list, err = mgr.List(ctx)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("expected 1 repository after soft delete, got %d", len(list))
 	}
@@ -67,11 +69,11 @@ func TestRepoManager(t *testing.T) {
 	}
 
 	// 4. Force remove
-	_, err = mgr.Remove("flat.git", true)
+	_, err = mgr.Remove(ctx, "flat.git", true)
 	if err != nil {
 		t.Fatalf("Remove(force=true) error: %v", err)
 	}
-	list, _ = mgr.List()
+	list, _ = mgr.List(ctx)
 	if len(list) != 0 {
 		t.Fatalf("expected 0 repositories, got %d", len(list))
 	}

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 
 	"gitina/internal/config"
+	"gitina/internal/git/tiered"
 	"gitina/internal/repo"
 )
 
@@ -66,7 +68,11 @@ func loadRepoMgr(configPath string) (*repo.Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w (searched path: %s)", err, resolved)
 	}
-	return repo.NewManager(cfg.Server.RepoRoot), nil
+	tieredMgr, err := tiered.NewManager(context.Background(), cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize storage manager: %w", err)
+	}
+	return repo.NewManager(cfg.Server.RepoRoot, tieredMgr), nil
 }
 
 func handleRepoList(args []string) {
@@ -81,7 +87,8 @@ func handleRepoList(args []string) {
 		os.Exit(1)
 	}
 
-	list, err := mgr.List()
+	ctx := context.Background()
+	list, err := mgr.List(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error listing repositories: %v\n", err)
 		os.Exit(1)
@@ -92,10 +99,18 @@ func handleRepoList(args []string) {
 		return
 	}
 
-	fmt.Printf("%-40s %-12s %s\n", "REPOSITORY", "SIZE", "UPDATED AT")
-	fmt.Println("--------------------------------------------------------------------------------")
+	fmt.Printf("%-38s %-14s %-10s %s\n", "REPOSITORY", "STORAGE", "SIZE", "UPDATED AT")
+	fmt.Println("----------------------------------------------------------------------------------------")
 	for _, r := range list {
-		fmt.Printf("%-40s %-12s %s\n", r.Path, formatSize(r.DiskSize), r.UpdatedAt.Format("2006-01-02 15:04:05"))
+		storageStatus := r.Storage
+		if r.Storage == "s3" {
+			if r.IsCached {
+				storageStatus = "s3 [CACHED]"
+			} else {
+				storageStatus = "s3 [S3-ONLY]"
+			}
+		}
+		fmt.Printf("%-38s %-14s %-10s %s\n", r.Path, storageStatus, formatSize(r.DiskSize), r.UpdatedAt.Format("2006-01-02 15:04:05"))
 	}
 }
 
@@ -122,7 +137,8 @@ func handleRepoRemove(args []string) {
 		os.Exit(1)
 	}
 
-	msg, err := mgr.Remove(repoPath, force)
+	ctx := context.Background()
+	msg, err := mgr.Remove(ctx, repoPath, force)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
