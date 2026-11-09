@@ -31,9 +31,10 @@ func main() {
 		_ = serveCmd.Parse(os.Args[1:])
 	}
 
-	cfg, err := config.Load(configPath)
+	resolvedPath := findConfigFile(configPath)
+	cfg, err := config.Load(resolvedPath)
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		log.Fatalf("Failed to load configuration from %q: %v", resolvedPath, err)
 	}
 
 	// 1. ACL Manager

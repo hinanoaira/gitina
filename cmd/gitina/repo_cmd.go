@@ -39,15 +39,32 @@ func printRepoHelp() {
 	fmt.Println("  clean              Purge old repositories from .trash")
 	fmt.Println()
 	fmt.Println("Options:")
-	fmt.Println("  -c <config.yaml>   Path to configuration file (default: config.yaml)")
+	fmt.Println("  -c <config.yaml>   Path to configuration file (default: auto-detect ./config.yaml or /etc/gitina/config.yaml)")
 	fmt.Println("  -f, --force        (for rm) Permanently delete without moving to trash")
 	fmt.Println("  --days <N>         (for clean) Purge items older than N days (default: 30)")
 }
 
+func findConfigFile(flagVal string) string {
+	if flagVal != "" && flagVal != "config.yaml" {
+		return flagVal
+	}
+	if env := os.Getenv("GITINA_CONFIG"); env != "" {
+		return env
+	}
+	if _, err := os.Stat("config.yaml"); err == nil {
+		return "config.yaml"
+	}
+	if _, err := os.Stat("/etc/gitina/config.yaml"); err == nil {
+		return "/etc/gitina/config.yaml"
+	}
+	return "config.yaml"
+}
+
 func loadRepoMgr(configPath string) (*repo.Manager, error) {
-	cfg, err := config.Load(configPath)
+	resolved := findConfigFile(configPath)
+	cfg, err := config.Load(resolved)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w (searched path: %s)", err, resolved)
 	}
 	return repo.NewManager(cfg.Server.RepoRoot), nil
 }

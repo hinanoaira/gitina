@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -84,6 +85,7 @@ func (m *Manager) Remove(repoPath string, force bool) (string, error) {
 	if err := os.MkdirAll(trashDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create trash directory: %w", err)
 	}
+	inheritOwnership(m.repoRoot, trashDir)
 
 	sanitizedName := strings.ReplaceAll(repoPath, "/", "_")
 	trashTarget := filepath.Join(trashDir, fmt.Sprintf("%d_%s", time.Now().Unix(), sanitizedName))
@@ -146,4 +148,12 @@ func getDirStats(dir string) (int64, time.Time) {
 	})
 
 	return totalSize, latestTime
+}
+
+func inheritOwnership(srcDir, destDir string) {
+	if info, err := os.Stat(srcDir); err == nil {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			_ = os.Chown(destDir, int(stat.Uid), int(stat.Gid))
+		}
+	}
 }

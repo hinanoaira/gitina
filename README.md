@@ -109,20 +109,24 @@ git push origin main
 ## 5. サーバー管理コマンド (CLI)
 
 SSHログインしたサーバー上からリポジトリの一覧や安全な削除が可能です。
+設定ファイルは自動検出されるため（`./config.yaml` $\rightarrow$ `/etc/gitina/config.yaml`）、どのカレントディレクトリからでも直接コマンドを実行できます。
 
 ```bash
 # ホストされているリポジトリ一覧の表示
-./gitina repo ls
+gitina repo ls
 
 # リポジトリの安全な削除 (デフォルトは .trash/ へ退避)
-./gitina repo rm path/to/directory.git
+gitina repo rm path/to/directory.git
 
 # 物理削除 (強制)
-./gitina repo rm -f path/to/directory.git
+gitina repo rm -f path/to/directory.git
 
 # ゴミ箱 (.trash/) 内の30日以上経過したリポジトリを完全消去
-./gitina repo clean --days 30
+gitina repo clean --days 30
 ```
+
+> [!TIP]
+> systemd で `git` ユーザー権限で動作させている環境では、パーミッションを揃えるため `sudo -u git gitina repo ...` または `sudo gitina repo ...` で実行できます。ゴミ箱の自動作成時もリポジトリ所有者情報が保持されます。
 
 ---
 
