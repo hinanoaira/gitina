@@ -1,0 +1,26 @@
+[Unit]
+Description=gitina Lightweight Git Server
+Documentation=https://github.com/hinanoaira/gitina
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=git
+Group=git
+WorkingDirectory=/var/lib/gitina
+ExecStart=/usr/local/bin/gitina serve -c /etc/gitina/config.yaml
+Restart=always
+RestartSec=5s
+
+# リソース制限 (大量のGit接続やファイルハンドルに備える)
+LimitNOFILE=65535
+
+# セキュリティサンドボックス設定
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
