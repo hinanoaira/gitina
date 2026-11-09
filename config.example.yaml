@@ -2,8 +2,23 @@
 server:
   listen: ":8080"
   base_url: "https://git.hns.jp"
-  repo_root: "./data/repositories"
+  repo_root: "./data/repositories" # Local SSD cache directory
   jwt_secret: "replace-with-a-very-long-random-secret-key"
+
+# Repository Storage (Tiered Storage)
+# Keep "local" for standalone disk storage, or "s3" to use S3/R2 as master with local SSD LRU cache.
+repository_storage:
+  type: "local" # "local" or "s3"
+  s3:
+    endpoint: "https://s3.ap-northeast-1.amazonaws.com" # Or Cloudflare R2
+    region: "ap-northeast-1"
+    bucket: "gitina-repos"
+    prefix: "repos/" # S3 prefix for repository bundles
+    access_key_id: "YOUR_ACCESS_KEY"
+    secret_access_key: "YOUR_SECRET_KEY"
+    use_path_style: false
+  cache:
+    max_size_gb: 15 # Maximum local SSD cache size in GB before LRU eviction
 
 # Git LFS Configuration
 lfs:

@@ -3,6 +3,7 @@
 Web UIを持たない超軽量・高性能なプライベートGitサーバー。
 
 - **Web UIなし・超軽量**: Go言語による単一バイナリ設計。
+- **S3 Tiered Storage（階層化ストレージ）**: S3/Cloudflare R2をマスターストレージとしてリポジトリを容量無制限にホスト。ローカルSSD（20GB等）をオンデマンドなLRUキャッシュとして活用し、小容量VPSでも巨大・大量リポジトリを安定運用。
 - **変幻自在なパス階層**: `/fuga.git`、`/path/to/directory.git`、`/path/to/directory/hoge.git` など任意の深さに対応。
 - **初回アクセス時の自動ベアリポジトリ作成**: 初回 `git clone` や `git push` 時に自動で `git init --bare` して即座に利用可能。
 - **Git Credential Manager (GCM) ブラウザ認証**: Gitea互換OAuth2フローを内包し、Git操作時にブラウザが自動起動してGitHub認証を実行。
@@ -106,7 +107,19 @@ git push origin main
 
 ---
 
-## 5. サーバー管理コマンド (CLI)
+## 5. S3 Tiered Storage（大容量・大量リポジトリ運用）
+
+WebARENA Indigo などの 20GB SSD マシンでも、S3 または Cloudflare R2 をマスターストレージとすることで、数百GB〜数TBのリポジトリを容量無制限でホストできます。
+
+### 仕組み
+- リポジトリ本体はすべて S3 上に `repos/<path>.bundle`（単一アーカイブ）として保存されます。
+- クライアントがアクセス（clone/fetch/push）した時のみ、S3から自動ダウンロードされてローカルSSDに一時展開されます。
+- `git push` が成功すると、最新の bundle が S3 に自動で同期されます。
+- ローカルSSDの使用量が `cache.max_size_gb` を超えると、最近使われていないリポジトリのローカルキャッシュが安全に自動蒸発（LRUパージ）します（S3に実体があるためデータ消失ゼロ）。
+
+---
+
+## 6. サーバー管理コマンド (CLI)
 
 SSHログインしたサーバー上からリポジトリの一覧や安全な削除が可能です。
 設定ファイルは自動検出されるため（`./config.yaml` $\rightarrow$ `/etc/gitina/config.yaml`）、どのカレントディレクトリからでも直接コマンドを実行できます。
