@@ -9,11 +9,12 @@ import (
 )
 
 type Config struct {
-	Server       ServerConfig       `yaml:"server"`
-	LFS          LFSConfig          `yaml:"lfs"`
-	GitHub       GitHubConfig       `yaml:"github"`
-	Admins       []string           `yaml:"admins"`
-	Repositories []RepositoryConfig `yaml:"repositories"`
+	Server            ServerConfig            `yaml:"server"`
+	RepositoryStorage RepositoryStorageConfig `yaml:"repository_storage"`
+	LFS               LFSConfig               `yaml:"lfs"`
+	GitHub            GitHubConfig            `yaml:"github"`
+	Admins            []string                `yaml:"admins"`
+	Repositories      []RepositoryConfig      `yaml:"repositories"`
 }
 
 type ServerConfig struct {
@@ -21,6 +22,26 @@ type ServerConfig struct {
 	BaseURL   string `yaml:"base_url"`   // e.g. "https://git.hns.jp"
 	RepoRoot  string `yaml:"repo_root"`  // directory where bare repos are stored
 	JWTSecret string `yaml:"jwt_secret"` // secret key for JWT signing
+}
+
+type RepositoryStorageConfig struct {
+	Type  string                 `yaml:"type"` // "local" or "s3"
+	S3    RepositoryStorageS3    `yaml:"s3"`
+	Cache RepositoryStorageCache `yaml:"cache"`
+}
+
+type RepositoryStorageS3 struct {
+	Endpoint        string `yaml:"endpoint"` // e.g. Cloudflare R2 or MinIO URL
+	Region          string `yaml:"region"`
+	Bucket          string `yaml:"bucket"`
+	Prefix          string `yaml:"prefix"` // default: "repos/"
+	AccessKeyID     string `yaml:"access_key_id"`
+	SecretAccessKey string `yaml:"secret_access_key"`
+	UsePathStyle    bool   `yaml:"use_path_style"`
+}
+
+type RepositoryStorageCache struct {
+	MaxSizeGB int `yaml:"max_size_gb"` // default: 15
 }
 
 type LFSConfig struct {
@@ -78,6 +99,19 @@ func Load(path string) (*Config, error) {
 		cfg.Server.BaseURL = "http://localhost:8080"
 	}
 	cfg.Server.BaseURL = strings.TrimRight(cfg.Server.BaseURL, "/")
+
+	if cfg.RepositoryStorage.Type == "" {
+		cfg.RepositoryStorage.Type = "local"
+	}
+	if cfg.RepositoryStorage.S3.Prefix == "" {
+		cfg.RepositoryStorage.S3.Prefix = "repos/"
+	}
+	if !strings.HasSuffix(cfg.RepositoryStorage.S3.Prefix, "/") {
+		cfg.RepositoryStorage.S3.Prefix += "/"
+	}
+	if cfg.RepositoryStorage.Cache.MaxSizeGB <= 0 {
+		cfg.RepositoryStorage.Cache.MaxSizeGB = 15
+	}
 
 	if cfg.LFS.Storage == "" {
 		cfg.LFS.Storage = "local"
