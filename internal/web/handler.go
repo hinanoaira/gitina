@@ -2,10 +2,13 @@ package web
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -163,19 +166,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	user := h.CurrentUser(r)
 	repoPath := parsed.RepoPath
 
-	// Ensure repository is available locally if tiered
-	if h.tieredMgr != nil {
-		release, err := h.tieredMgr.Acquire(r.Context(), repoPath)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to acquire repository: %v", err), http.StatusInternalServerError)
-			return
-		}
-		defer release()
-	}
-
-	fullRepoPath := path.Join(h.cfg.Server.RepoRoot, repoPath)
-
-	// Access control
+	// 1. Access control check first (before acquiring/loading repository from S3 or local)
 	canRead := h.aclMgr.CanRead(user, repoPath)
 	canWrite := h.aclMgr.CanWrite(user, repoPath)
 	isAdmin := h.aclMgr.IsAdmin(user)
@@ -191,6 +182,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+
+	// 2. Ensure repository is available locally if tiered (never auto-create on web browsing)
+	if h.tieredMgr != nil {
+		release, err := h.tieredMgr.Acquire(r.Context(), repoPath, false)
+		if err != nil {
+			if errors.Is(err, tiered.ErrRepoNotFound) {
+				http.NotFound(w, r)
+				return
+			}
+			http.Error(w, fmt.Sprintf("failed to acquire repository: %v", err), http.StatusInternalServerError)
+			return
+		}
+		defer release()
+	} else {
+		// Local storage fallback: verify bare repo exists
+		fullRepoPath := path.Join(h.cfg.Server.RepoRoot, repoPath)
+		if _, err := os.Stat(filepath.Join(fullRepoPath, "HEAD")); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	fullRepoPath := path.Join(h.cfg.Server.RepoRoot, repoPath)
 
 	// Dispatch sub-actions
 	sub := parsed.SubPath

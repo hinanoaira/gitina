@@ -69,9 +69,12 @@ func (m *Manager) getMutex(repoPath string) *sync.Mutex {
 	return mu
 }
 
+var ErrRepoNotFound = errors.New("repository not found")
+
 // Acquire locks the repository and ensures it is present in the local cache.
+// If autoCreate is false and the repository does not exist locally or on S3, ErrRepoNotFound is returned.
 // Returns an unlock function that must be deferred or called when Git operation finishes.
-func (m *Manager) Acquire(ctx context.Context, repoPath string) (func(), error) {
+func (m *Manager) Acquire(ctx context.Context, repoPath string, autoCreate bool) (func(), error) {
 	repoPath = strings.Trim(filepath.ToSlash(repoPath), "/")
 	if !strings.HasSuffix(repoPath, ".git") {
 		repoPath += ".git"
@@ -101,8 +104,12 @@ func (m *Manager) Acquire(ctx context.Context, repoPath string) (func(), error) 
 		return release, nil
 	}
 
-	// 2. Not in local cache. If tiered storage is not enabled, initialize bare repo locally.
+	// 2. Not in local cache. If tiered storage is not enabled:
 	if !m.IsTiered() {
+		if !autoCreate {
+			release()
+			return nil, ErrRepoNotFound
+		}
 		if err := initBareRepo(fullLocalPath); err != nil {
 			release()
 			return nil, fmt.Errorf("failed to auto-init repository: %w", err)
@@ -141,6 +148,11 @@ func (m *Manager) Acquire(ctx context.Context, repoPath string) (func(), error) 
 		log.Printf("[Tiered] Restored %q to local cache successfully", repoPath)
 		touch(headPath)
 	} else {
+		// Does not exist on S3
+		if !autoCreate {
+			release()
+			return nil, ErrRepoNotFound
+		}
 		// New repository: initialize bare repo locally
 		if err := initBareRepo(fullLocalPath); err != nil {
 			release()

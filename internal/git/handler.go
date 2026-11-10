@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -124,9 +125,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Acquire repository (tiered storage restore / local lock)
+	// Only auto-create bare repository if:
+	// - This is a push operation (isWrite)
+	// - OR an authenticated user who has write access to this repo is cloning/initializing it
+	// Anonymous reads / scanners will NEVER trigger repository auto-creation.
+	autoCreate := isWrite || (username != "" && h.aclMgr.CanWrite(username, parsed.RepoPath))
+
 	if h.tieredMgr != nil {
-		release, err := h.tieredMgr.Acquire(r.Context(), parsed.RepoPath)
+		release, err := h.tieredMgr.Acquire(r.Context(), parsed.RepoPath, autoCreate)
 		if err != nil {
+			if errors.Is(err, tiered.ErrRepoNotFound) {
+				http.NotFound(w, r)
+				return
+			}
 			http.Error(w, fmt.Sprintf("failed to acquire repository: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -134,9 +145,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Fallback: Ensure bare repository exists locally
 		fullRepoPath := filepath.Join(h.cfg.Server.RepoRoot, parsed.RepoPath)
-		if err := EnsureRepo(fullRepoPath); err != nil {
-			http.Error(w, fmt.Sprintf("failed to initialize repository: %v", err), http.StatusInternalServerError)
-			return
+		if _, err := os.Stat(filepath.Join(fullRepoPath, "HEAD")); err != nil {
+			if !autoCreate {
+				http.NotFound(w, r)
+				return
+			}
+			if err := EnsureRepo(fullRepoPath); err != nil {
+				http.Error(w, fmt.Sprintf("failed to initialize repository: %v", err), http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 

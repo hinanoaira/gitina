@@ -77,4 +77,17 @@ func TestCloneUncreatedRepoAutoInit(t *testing.T) {
 	if contentType != "application/x-git-upload-pack-advertisement" {
 		t.Fatalf("unexpected content type: %s", contentType)
 	}
+
+	// 3. Anonymous attempt to clone a non-existent repo must NOT create repository (returns 404 or 401)
+	reqAnon := httptest.NewRequest(http.MethodGet, "/scanner/fake.git/info/refs?service=git-upload-pack", nil)
+	wAnon := httptest.NewRecorder()
+	handler.ServeHTTP(wAnon, reqAnon)
+	if wAnon.Code != http.StatusNotFound && wAnon.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 404 or 401 for anonymous access to non-existent repo, got %d", wAnon.Code)
+	}
+
+	fakeRepoPath := filepath.Join(repoRoot, "scanner", "fake.git")
+	if _, err := os.Stat(fakeRepoPath); err == nil {
+		t.Fatalf("scanner/fake.git should NOT have been created on disk!")
+	}
 }
