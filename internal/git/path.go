@@ -36,6 +36,9 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 	}
 
 	// Security: check for path traversal
+	if strings.Contains(urlPath, "..") {
+		return nil, ErrInvalidPath
+	}
 	cleaned := filepath.Clean("/" + urlPath)
 	if strings.Contains(cleaned, "..") || cleaned == "/" {
 		return nil, ErrInvalidPath
@@ -71,10 +74,29 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 		}
 	}
 
-	// If no known endpoint suffix matched, check if path ends with .git
+	// Check if path contains .git/ or ends with .git
+	if idx := strings.Index(urlPath, ".git/"); idx != -1 {
+		repoPart := urlPath[:idx+4]
+		subPart := strings.Trim(urlPath[idx+5:], "/")
+		return &ParsedRequest{
+			RepoPath: repoPart,
+			SubPath:  subPart,
+			IsLFS:    false,
+		}, nil
+	}
+
 	if strings.HasSuffix(urlPath, ".git") {
 		return &ParsedRequest{
 			RepoPath: urlPath,
+			SubPath:  "",
+			IsLFS:    false,
+		}, nil
+	}
+
+	// Also support URLs without .git (e.g. "path/to/repo")
+	if !strings.Contains(filepath.Base(urlPath), ".") {
+		return &ParsedRequest{
+			RepoPath: urlPath + ".git",
 			SubPath:  "",
 			IsLFS:    false,
 		}, nil
