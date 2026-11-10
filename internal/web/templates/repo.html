@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{.RepoPath}} - gitina</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #1f2328;
+      --card-bg: #f6f8fa;
+      --border: #d0d7de;
+      --link: #0969da;
+      --btn-bg: #f6f8fa;
+      --btn-hover: #f3f4f6;
+      --primary: #1f883d;
+      --primary-hover: #1a7f37;
+      --danger: #cf222e;
+      --danger-hover: #a40e26;
+      --code-bg: #f6f8fa;
+      --tag-public: #2da44e;
+      --tag-private: #8c959f;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --fg: #e6edf3;
+        --card-bg: #161b22;
+        --border: #30363d;
+        --link: #4493f8;
+        --btn-bg: #21262d;
+        --btn-hover: #30363d;
+        --primary: #238636;
+        --primary-hover: #2ea043;
+        --danger: #da3633;
+        --danger-hover: #f85149;
+        --code-bg: #161b22;
+        --tag-public: #238636;
+        --tag-private: #6e7681;
+      }
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+    }
+    header {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-weight: 700;
+      font-size: 1.2rem;
+      text-decoration: none;
+      color: var(--fg);
+    }
+    .user-nav {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 0.9rem;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .repo-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .repo-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+    }
+    .badge-public { color: var(--tag-public); border-color: var(--tag-public); }
+    .badge-private { color: var(--tag-private); border-color: var(--tag-private); }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 8px 16px;
+      text-decoration: none;
+      color: var(--fg);
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+    .tab:hover { border-bottom-color: var(--border); }
+    .tab.active { border-bottom-color: #fd8c73; font-weight: 600; }
+    .clone-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+    }
+    .clone-box input {
+      background: transparent;
+      border: none;
+      color: var(--fg);
+      font-family: monospace;
+      font-size: 0.85rem;
+      width: 320px;
+      outline: none;
+    }
+    button, .btn {
+      background: var(--btn-bg);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button:hover, .btn:hover { background: var(--btn-hover); }
+    .btn-primary { background: var(--primary); color: #fff; border: none; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-danger { background: var(--danger); color: #fff; border: none; }
+    .btn-danger:hover { background: var(--danger-hover); }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+    .card-header {
+      background: var(--card-bg);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .tree-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    .tree-table tr { border-bottom: 1px solid var(--border); }
+    .tree-table tr:last-child { border-bottom: none; }
+    .tree-table td { padding: 8px 16px; }
+    .tree-table a { color: var(--link); text-decoration: none; }
+    .tree-table a:hover { text-decoration: underline; }
+    .blob-view {
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+      padding: 16px;
+      overflow-x: auto;
+      white-space: pre;
+      background: var(--code-bg);
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-size: 0.9rem;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      max-width: 400px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg);
+      box-sizing: border-box;
+    }
+    .token-box {
+      background: #dafbe1;
+      border: 1px solid #4ac26b;
+      color: #1a7f37;
+      padding: 12px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-family: monospace;
+      word-break: break-all;
+    }
+    @media (prefers-color-scheme: dark) {
+      .token-box { background: #1c3d27; border-color: #238636; color: #3fb950; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="logo">gitina</a>
+  <div class="user-nav">
+    {{if .CurrentUser}}
+      <span>Signed in as <strong>{{.CurrentUser}}</strong></span>
+      {{if .IsAdmin}}<span class="badge" style="background:#54aeff22; color:#54aeff;">Admin</span>{{end}}
+      <a href="/login/oauth/logout" class="btn" style="padding: 3px 8px;">Logout</a>
+    {{else}}
+      <a href="/login/oauth/authorize?redirect_uri=/{{.RepoPath}}" class="btn btn-primary">GitHubでログイン</a>
+    {{end}}
+  </div>
+</header>
+
+<div class="container">
+  <div class="repo-header">
+    <div>
+      <div class="repo-title">
+        📁 {{.RepoPath}}
+        {{if .IsPublic}}
+          <span class="badge badge-public">Public</span>
+        {{else}}
+          <span class="badge badge-private">Private</span>
+        {{end}}
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <div class="clone-box">
+        <span style="font-size:0.8rem; color:gray;">HTTPS</span>
+        <input type="text" readonly value="{{.CloneURL}}" id="cloneInput">
+        <button onclick="navigator.clipboard.writeText(document.getElementById('cloneInput').value); alert('クローンURLをコピーしました');">コピー</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="/{{.RepoPath}}?tab=code&ref={{.CurrentRef}}" class="tab {{if eq .Tab "code"}}active{{end}}">コード</a>
+    <a href="/{{.RepoPath}}?tab=commits&ref={{.CurrentRef}}" class="tab {{if eq .Tab "commits"}}active{{end}}">コミット</a>
+    {{if .CurrentUser}}
+      <a href="/{{.RepoPath}}?tab=tokens" class="tab {{if eq .Tab "tokens"}}active{{end}}">トークン発行 (PAT)</a>
+    {{end}}
+    {{if .IsAdmin}}
+      <a href="/{{.RepoPath}}?tab=settings" class="tab {{if eq .Tab "settings"}}active{{end}}">設定</a>
+    {{end}}
+  </div>
+
+  {{if eq .Tab "code"}}
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <div>
+        <label style="font-size: 0.85rem; font-weight: 600;">Branch: </label>
+        <select onchange="location.href='/{{$.RepoPath}}?tab=code&ref=' + this.value" style="padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg);">
+          {{range .Branches}}
+            <option value="{{.Name}}" {{if eq .Name $.CurrentRef}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+        {{if .CurrentPath}}
+          <span style="margin-left: 10px; font-weight: 500;">/ {{.CurrentPath}}</span>
+        {{end}}
+      </div>
+      {{if .LatestCommit}}
+        <div style="font-size: 0.85rem; color: gray;">
+          最新コミット: <strong>{{.LatestCommit.ShortHash}}</strong> - {{.LatestCommit.Message}} ({{formatDate .LatestCommit.AuthorDate}})
+        </div>
+      {{end}}
+    </div>
+
+    {{if .Blob}}
+      <div class="card">
+        <div class="card-header">
+          <strong>{{.Blob.Name}}</strong>
+          <span>{{formatSize .Blob.Size}}</span>
+        </div>
+        {{if .Blob.IsBinary}}
+          <div style="padding: 32px; text-align: center; color: gray;">バイナリファイルのためプレビューを表示できません</div>
+        {{else}}
+          <div class="blob-view">{{.Blob.Content}}</div>
+        {{end}}
+      </div>
+    {{else}}
+      <div class="card">
+        <table class="tree-table">
+          {{if .CurrentPath}}
+            <tr>
+              <td colspan="3">📁 <a href="/{{$.RepoPath}}?tab=code&ref={{$.CurrentRef}}">.. (親ディレクトリへ)</a></td>
+            </tr>
+          {{end}}
+          {{range .TreeEntries}}
+            <tr>
+              <td style="width: 24px;">
+                {{if eq .Type "tree"}}📁{{else}}📄{{end}}
+              </td>
+              <td>
+                <a href="/{{$.RepoPath}}?tab=code&ref={{$.CurrentRef}}&path={{.Path}}">{{.Name}}</a>
+              </td>
+              <td style="text-align: right; color: gray; font-size: 0.8rem;">
+                {{if eq .Type "blob"}}{{formatSize .Size}}{{end}}
+              </td>
+            </tr>
+          {{end}}
+        </table>
+      </div>
+
+      {{if .Readme}}
+        <div class="card">
+          <div class="card-header">
+            📖 <strong>{{.Readme.Name}}</strong>
+          </div>
+          <div style="padding: 24px; white-space: pre-wrap; font-family: sans-serif;">{{.Readme.Content}}</div>
+        </div>
+      {{end}}
+    {{end}}
+
+  {{else if eq .Tab "commits"}}
+    <div class="card">
+      <table class="tree-table">
+        {{range .Commits}}
+          <tr>
+            <td style="font-family: monospace; width: 90px; color: var(--link);">{{.ShortHash}}</td>
+            <td><strong>{{.Message}}</strong></td>
+            <td style="color: gray; font-size: 0.85rem;">{{.AuthorName}}</td>
+            <td style="color: gray; font-size: 0.85rem; text-align: right;">{{formatDate .AuthorDate}}</td>
+          </tr>
+        {{end}}
+      </table>
+    </div>
+
+  {{else if eq .Tab "tokens"}}
+    <div class="card" style="padding: 24px; max-width: 600px;">
+      <h3>パーソナルアクセストークン (PAT) の発行</h3>
+      <p style="font-size: 0.9rem; color: gray;">
+        このリポジトリ専用のアクセストークンを発行します。<br>
+        発行されたトークンは <code>git clone</code> や <code>git push</code> 時の認証パスワードとして利用できます。
+      </p>
+
+      {{if .GeneratedToken}}
+        <div class="token-box">
+          <strong>発行されたトークン（再表示されません）:</strong><br>
+          <span id="patVal">{{.GeneratedToken}}</span><br><br>
+          <button onclick="navigator.clipboard.writeText(document.getElementById('patVal').innerText); alert('トークンをコピーしました');">クリップボードにコピー</button>
+        </div>
+      {{end}}
+
+      <form action="/{{.RepoPath}}/tokens/generate" method="POST">
+        <div class="form-group">
+          <label>スコープ (権限)</label>
+          <select name="scope">
+            <option value="ro">readonly (読取専用: clone/fetch のみ)</option>
+            {{if .CanWrite}}
+              <option value="rw">readwrite (読取・書込: push も可能)</option>
+            {{end}}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>有効期限</label>
+          <select name="days">
+            <option value="30">30 日間</option>
+            <option value="90" selected>90 日間</option>
+            <option value="365">1 年間</option>
+            <option value="0">無期限</option>
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn-primary">トークンを生成</button>
+      </form>
+    </div>
+
+  {{else if eq .Tab "settings"}}
+    {{if .IsAdmin}}
+      <!-- Visibility Setting -->
+      <div class="card" style="padding: 24px; margin-bottom: 24px;">
+        <h3>公開・非公開設定</h3>
+        <p style="font-size: 0.9rem; color: gray;">
+          Public に設定すると、誰でも匿名でリポジトリの閲覧やクローンができるようになります。
+        </p>
+        <form action="/{{.RepoPath}}/settings/update-visibility" method="POST">
+          <div class="form-group">
+            <label>
+              <input type="radio" name="public" value="true" {{if .IsPublic}}checked{{end}}> <strong>Public</strong> (公開)
+            </label>
+            <label style="margin-left: 20px;">
+              <input type="radio" name="public" value="false" {{if not .IsPublic}}checked{{end}}> <strong>Private</strong> (非公開)
+            </label>
+          </div>
+          <button type="submit" class="btn btn-primary">設定を保存</button>
+        </form>
+      </div>
+
+      <!-- Collaborators Setting -->
+      <div class="card" style="padding: 24px; margin-bottom: 24px;">
+        <h3>共同作業者 (Collaborators) の管理</h3>
+        <p style="font-size: 0.9rem; color: gray;">
+          特定の GitHub ユーザーに対して読み取りまたは書き込み権限を付与します。
+        </p>
+
+        <table class="tree-table" style="margin-bottom: 20px;">
+          <tr>
+            <th>GitHub ユーザー名</th>
+            <th>権限</th>
+            <th style="text-align: right;">操作</th>
+          </tr>
+          {{range $user, $role := .Collaborators}}
+            <tr>
+              <td><strong>{{$user}}</strong></td>
+              <td>{{if eq $role "rw"}}Read & Write (書込可){{else}}Read Only (読取のみ){{end}}</td>
+              <td style="text-align: right;">
+                <form action="/{{$.RepoPath}}/settings/delete-collaborator" method="POST" style="display:inline;">
+                  <input type="hidden" name="username" value="{{$user}}">
+                  <button type="submit" class="btn btn-danger" style="padding: 2px 8px; font-size: 0.8rem;" onclick="return confirm('ユーザー {{$user}} の権限を削除しますか？');">削除</button>
+                </form>
+              </td>
+            </tr>
+          {{else}}
+            <tr>
+              <td colspan="3" style="color: gray;">登録されているコラボレーターはいません。</td>
+            </tr>
+          {{end}}
+        </table>
+
+        <h4>ユーザーの追加・権限更新</h4>
+        <form action="/{{.RepoPath}}/settings/add-collaborator" method="POST" style="display: flex; gap: 12px; align-items: flex-end;">
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>GitHub ユーザー名</label>
+            <input type="text" name="username" required placeholder="octocat">
+          </div>
+          <div class="form-group" style="margin-bottom: 0;">
+            <label>権限</label>
+            <select name="role">
+              <option value="ro">Read Only (読取のみ)</option>
+              <option value="rw">Read & Write (書込可)</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary" style="height: 38px;">追加 / 保存</button>
+        </form>
+      </div>
+
+      <!-- Delete Repository -->
+      <div class="card" style="padding: 24px; border-color: var(--danger);">
+        <h3 style="color: var(--danger);">リポジトリの削除 (Danger Zone)</h3>
+        <p style="font-size: 0.9rem; color: gray;">
+          リポジトリを削除します。デフォルトでは <code>.trash</code> に安全に退避されます。
+        </p>
+        <form action="/{{.RepoPath}}/settings/delete-repo" method="POST" onsubmit="return confirm('本当にリポジトリを削除しますか？');">
+          <div class="form-group">
+            <label>確認のためリポジトリ名 (<code>{{.RepoPath}}</code>) を入力してください:</label>
+            <input type="text" name="confirm_name" required placeholder="{{.RepoPath}}">
+          </div>
+          <div class="form-group">
+            <label>
+              <input type="checkbox" name="force" value="true"> ゴミ箱に入れず完全に物理削除する
+            </label>
+          </div>
+          <button type="submit" class="btn btn-danger">リポジトリを削除</button>
+        </form>
+      </div>
+    {{end}}
+  {{end}}
+</div>
+
+</body>
+</html>
