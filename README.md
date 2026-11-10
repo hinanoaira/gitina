@@ -1,13 +1,14 @@
 # gitina
 
-Web UIを持たない超軽量・高性能なプライベートGitサーバー。
+超軽量・高性能なプライベートGitサーバー＆リポジトリビューア。
 
-- **Web UIなし・超軽量**: Go言語による単一バイナリ設計。
+- **超軽量＆ゼロ外部依存**: Go言語単一バイナリ設計。Node.jsや重厚なDBは一切不要。
+- **Web リポジトリビューア＆管理UI内包**: ブラウザでリポジトリURLを開くだけで、ファイルツリー、ソースコード、コミット履歴の閲覧、パーソナルアクセストークン（PAT）の発行、権限管理が可能。
 - **S3 Tiered Storage（階層化ストレージ）**: S3/Cloudflare R2をマスターストレージとしてリポジトリを容量無制限にホスト。ローカルSSD（20GB等）をオンデマンドなLRUキャッシュとして活用し、小容量VPSでも巨大・大量リポジトリを安定運用。
 - **変幻自在なパス階層**: `/fuga.git`、`/path/to/directory.git`、`/path/to/directory/hoge.git` など任意の深さに対応。
 - **初回アクセス時の自動ベアリポジトリ作成**: 初回 `git clone` や `git push` 時に自動で `git init --bare` して即座に利用可能。
 - **Git Credential Manager (GCM) ブラウザ認証**: Gitea互換OAuth2フローを内包し、Git操作時にブラウザが自動起動してGitHub認証を実行。
-- **GitHub OAuth & きめ細やかな認可 (ACL)**: リポジトリ単位で `public: true/false` やユーザーごとの `rw` / `ro` をYAML設定。
+- **GitHub OAuth & きめ細やかな認可 (ACL)**: リポジトリ単位で `public: true/false` やユーザーごとの `rw` / `ro` をYAML設定＆Web画面から動的変更可能。
 - **Git LFS (Large File Storage) 完全対応**: ローカルディスク保存およびS3互換ストレージ（AWS S3 / Cloudflare R2 / MinIO 等）での Presigned URL 直接転送に対応。
 - **サーバー管理CLI**: `gitina repo ls`、`gitina repo rm`、`gitina repo clean` による安全なリポジトリ管理（ゴミ箱機能つき）。
 

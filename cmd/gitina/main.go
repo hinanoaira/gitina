@@ -15,6 +15,8 @@ import (
 	"gitina/internal/git"
 	"gitina/internal/git/tiered"
 	"gitina/internal/lfs"
+	"gitina/internal/repo"
+	"gitina/internal/web"
 )
 
 const version = "0.1.0"
@@ -111,6 +113,7 @@ func runServeCmd(globalConfig string, args []string) {
 
 	// 1. ACL Manager
 	aclMgr := acl.NewManager(cfg.Admins, cfg.Repositories)
+	aclMgr.SetRepoRoot(cfg.Server.RepoRoot)
 
 	// 2. Auth & GCM Handlers
 	tokenMgr := auth.NewTokenManager(cfg.Server.JWTSecret)
@@ -142,24 +145,59 @@ func runServeCmd(globalConfig string, args []string) {
 		log.Fatalf("Failed to initialize tiered storage manager: %v", err)
 	}
 
-	// 5. Git Smart HTTP Handler
+	// 5. Repository Manager & Web UI Handler
+	repoMgr := repo.NewManager(cfg.Server.RepoRoot, tieredMgr)
+	webHandler, err := web.NewHandler(cfg, aclMgr, tokenMgr, repoMgr, tieredMgr)
+	if err != nil {
+		log.Fatalf("Failed to initialize web UI handler: %v", err)
+	}
+
+	// 6. Git Smart HTTP Handler
 	gitHandler, err := git.NewHandler(cfg, aclMgr, gcmHandler, lfsHandler, tieredMgr)
 	if err != nil {
 		log.Fatalf("Failed to initialize git handler: %v", err)
 	}
 
-	// 6. Root Multiplexer
+	// 7. Root Multiplexer
 	mux := http.NewServeMux()
 
 	// GCM / Gitea OAuth2 endpoints
 	mux.HandleFunc("/login/oauth/authorize", gcmHandler.HandleAuthorize)
 	mux.HandleFunc("/login/oauth/github/callback", gcmHandler.HandleGitHubCallback)
 	mux.HandleFunc("/login/oauth/access_token", gcmHandler.HandleToken)
+	mux.HandleFunc("/login/oauth/logout", gcmHandler.HandleLogout)
 	mux.HandleFunc("/api/v1/user", gcmHandler.HandleUser)
 	mux.HandleFunc("/api/v1/version", gcmHandler.HandleVersion)
 
-	// Git Smart HTTP & LFS fallback handler (handles all arbitrary repo paths)
-	mux.Handle("/", gitHandler)
+	// Intelligent Root Router: dispatches to Git Smart HTTP or Web UI
+	rootRouter := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		isGit := false
+		ua := r.Header.Get("User-Agent")
+		accept := r.Header.Get("Accept")
+
+		if strings.HasPrefix(ua, "git/") || strings.HasPrefix(ua, "git-lfs") {
+			isGit = true
+		} else if r.URL.Query().Get("service") != "" {
+			isGit = true
+		} else if strings.HasSuffix(r.URL.Path, "/git-upload-pack") || strings.HasSuffix(r.URL.Path, "/git-receive-pack") || strings.HasSuffix(r.URL.Path, "/info/refs") || strings.Contains(r.URL.Path, "/info/lfs/") {
+			isGit = true
+		}
+
+		if isGit || (!strings.Contains(accept, "text/html") && r.Method == http.MethodPost) {
+			gitHandler.ServeHTTP(w, r)
+			return
+		}
+
+		// Web UI access
+		if r.URL.Path == "/" {
+			webHandler.ServeHome(w, r)
+			return
+		}
+
+		webHandler.ServeHTTP(w, r)
+	})
+
+	mux.Handle("/", rootRouter)
 
 	log.Printf("Starting gitina server on %s (Base URL: %s)...", cfg.Server.Listen, cfg.Server.BaseURL)
 	if err := http.ListenAndServe(cfg.Server.Listen, mux); err != nil {
