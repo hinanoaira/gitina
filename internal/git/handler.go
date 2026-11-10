@@ -142,9 +142,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		absRepoRoot = h.cfg.Server.RepoRoot
 	}
 
-	// For POST requests with chunked transfer (no Content-Length), spool to temp file
-	// so git-http-backend receives the exact CONTENT_LENGTH required by CGI specification.
-	if r.Method == http.MethodPost && r.ContentLength <= 0 {
+	// For POST requests with chunked transfer (no Content-Length or chunked TransferEncoding),
+	// spool to temp file so git-http-backend receives the exact CONTENT_LENGTH required by CGI specification.
+	if r.Method == http.MethodPost && (r.ContentLength <= 0 || (len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked")) {
 		tmpSpool, err := os.CreateTemp("", "gitina_post_spool_*")
 		if err != nil {
 			http.Error(w, "failed to create spool file for large push", http.StatusInternalServerError)
@@ -165,6 +165,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		r.Body = io.NopCloser(tmpSpool)
 		r.ContentLength = written
+		r.TransferEncoding = nil
 	}
 
 	cgiHandler := &cgi.Handler{
