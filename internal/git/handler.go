@@ -1,12 +1,17 @@
 package git
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/http/cgi"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gitina/internal/acl"
 	"gitina/internal/auth"
@@ -137,6 +142,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		absRepoRoot = h.cfg.Server.RepoRoot
 	}
 
+	// For POST requests with chunked transfer (no Content-Length), spool to temp file
+	// so git-http-backend receives the exact CONTENT_LENGTH required by CGI specification.
+	if r.Method == http.MethodPost && r.ContentLength <= 0 {
+		tmpSpool, err := os.CreateTemp("", "gitina_post_spool_*")
+		if err != nil {
+			http.Error(w, "failed to create spool file for large push", http.StatusInternalServerError)
+			return
+		}
+		defer os.Remove(tmpSpool.Name())
+		defer tmpSpool.Close()
+
+		written, err := io.Copy(tmpSpool, r.Body)
+		if err != nil {
+			http.Error(w, "failed to spool request body", http.StatusInternalServerError)
+			return
+		}
+		if _, err := tmpSpool.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "failed to rewind spool file", http.StatusInternalServerError)
+			return
+		}
+
+		r.Body = io.NopCloser(tmpSpool)
+		r.ContentLength = written
+	}
+
 	cgiHandler := &cgi.Handler{
 		Path: h.gitBackend,
 		Dir:  absRepoRoot,
@@ -153,8 +183,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	cgiHandler.ServeHTTP(w, r)
 
-	// 5. If it was a push (write), sync updated bundle to S3
+	// 5. If it was a push (write), sync updated bundle to S3 asynchronously
 	if isWrite && h.tieredMgr != nil {
-		_ = h.tieredMgr.Sync(r.Context(), parsed.RepoPath)
+		go func(repo string) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+			defer cancel()
+			if err := h.tieredMgr.Sync(ctx, repo); err != nil {
+				log.Printf("[Tiered] Async S3 sync error for %q: %v", repo, err)
+			}
+		}(parsed.RepoPath)
 	}
 }
