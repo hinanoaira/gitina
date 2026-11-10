@@ -1,15 +1,19 @@
 package git
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
-	"net/http/cgi"
+	"net/textproto"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -136,53 +140,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 4. Delegate to git-http-backend using net/http/cgi
+	// 4. Delegate to git-http-backend directly via streaming pipes
 	absRepoRoot, err := filepath.Abs(h.cfg.Server.RepoRoot)
 	if err != nil {
 		absRepoRoot = h.cfg.Server.RepoRoot
 	}
 
-	// For POST requests with chunked transfer (no Content-Length or chunked TransferEncoding),
-	// spool to temp file so git-http-backend receives the exact CONTENT_LENGTH required by CGI specification.
-	if r.Method == http.MethodPost && (r.ContentLength <= 0 || (len(r.TransferEncoding) > 0 && r.TransferEncoding[0] == "chunked")) {
-		tmpSpool, err := os.CreateTemp("", "gitina_post_spool_*")
-		if err != nil {
-			http.Error(w, "failed to create spool file for large push", http.StatusInternalServerError)
-			return
-		}
-		defer os.Remove(tmpSpool.Name())
-		defer tmpSpool.Close()
-
-		written, err := io.Copy(tmpSpool, r.Body)
-		if err != nil {
-			http.Error(w, "failed to spool request body", http.StatusInternalServerError)
-			return
-		}
-		if _, err := tmpSpool.Seek(0, io.SeekStart); err != nil {
-			http.Error(w, "failed to rewind spool file", http.StatusInternalServerError)
-			return
-		}
-
-		r.Body = io.NopCloser(tmpSpool)
-		r.ContentLength = written
-		r.TransferEncoding = nil
-	}
-
-	cgiHandler := &cgi.Handler{
-		Path: h.gitBackend,
-		Dir:  absRepoRoot,
-		Env: []string{
-			"GIT_PROJECT_ROOT=" + absRepoRoot,
-			"GIT_HTTP_EXPORT_ALL=1",
-			"PATH_INFO=/" + parsed.RepoPath + "/" + parsed.SubPath,
-			"REMOTE_USER=" + username,
-			"GIT_CONFIG_COUNT=1",
-			"GIT_CONFIG_KEY_0=safe.directory",
-			"GIT_CONFIG_VALUE_0=*",
-		},
-	}
-
-	cgiHandler.ServeHTTP(w, r)
+	h.serveGitBackend(w, r, parsed.RepoPath, parsed.SubPath, username, absRepoRoot)
 
 	// 5. If it was a push (write), sync updated bundle to S3 asynchronously
 	if isWrite && h.tieredMgr != nil {
@@ -193,5 +157,103 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[Tiered] Async S3 sync error for %q: %v", repo, err)
 			}
 		}(parsed.RepoPath)
+	}
+}
+
+// serveGitBackend executes git-http-backend directly with streaming pipes (no spooling).
+func (h *Handler) serveGitBackend(w http.ResponseWriter, r *http.Request, repoPath, subPath, username, absRepoRoot string) {
+	cmd := exec.CommandContext(r.Context(), h.gitBackend)
+	cmd.Dir = absRepoRoot
+
+	pathInfo := "/" + repoPath + "/" + subPath
+
+	remoteIP := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		remoteIP = host
+	}
+
+	env := []string{
+		"GIT_PROJECT_ROOT=" + absRepoRoot,
+		"GIT_HTTP_EXPORT_ALL=1",
+		"PATH_INFO=" + pathInfo,
+		"REMOTE_USER=" + username,
+		"REMOTE_ADDR=" + remoteIP,
+		"REQUEST_METHOD=" + r.Method,
+		"QUERY_STRING=" + r.URL.RawQuery,
+		"REQUEST_URI=" + r.URL.RequestURI(),
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=safe.directory",
+		"GIT_CONFIG_VALUE_0=*",
+		"PATH=" + os.Getenv("PATH"),
+	}
+
+	if r.ContentLength > 0 {
+		env = append(env, fmt.Sprintf("CONTENT_LENGTH=%d", r.ContentLength))
+	}
+	if ctype := r.Header.Get("Content-Type"); ctype != "" {
+		env = append(env, "CONTENT_TYPE="+ctype)
+	}
+	if proto := r.Header.Get("Git-Protocol"); proto != "" {
+		env = append(env, "GIT_PROTOCOL="+proto, "HTTP_GIT_PROTOCOL="+proto)
+	}
+
+	for k, vv := range r.Header {
+		upper := strings.ToUpper(strings.ReplaceAll(k, "-", "_"))
+		if upper == "CONTENT_TYPE" || upper == "CONTENT_LENGTH" {
+			continue
+		}
+		for _, v := range vv {
+			env = append(env, "HTTP_"+upper+"="+v)
+		}
+	}
+
+	cmd.Env = env
+	cmd.Stdin = r.Body
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		http.Error(w, "failed to create git backend pipe", http.StatusInternalServerError)
+		return
+	}
+
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Start(); err != nil {
+		http.Error(w, fmt.Sprintf("failed to start git backend: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	bufr := bufio.NewReader(stdoutPipe)
+	tp := textproto.NewReader(bufr)
+	mimeHeader, err := tp.ReadMIMEHeader()
+	if err != nil {
+		cmd.Wait()
+		log.Printf("[GitBackend] Error reading headers from %s: %v (stderr: %s)", pathInfo, err, stderrBuf.String())
+		http.Error(w, "internal git backend error", http.StatusInternalServerError)
+		return
+	}
+
+	statusCode := http.StatusOK
+	if status := mimeHeader.Get("Status"); status != "" {
+		parts := strings.SplitN(status, " ", 2)
+		if code, err := strconv.Atoi(parts[0]); err == nil {
+			statusCode = code
+		}
+		mimeHeader.Del("Status")
+	}
+
+	for k, vv := range mimeHeader {
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+	w.WriteHeader(statusCode)
+
+	io.Copy(w, bufr)
+	if err := cmd.Wait(); err != nil {
+		if stderrBuf.Len() > 0 {
+			log.Printf("[GitBackend] git-http-backend exited with error for %s: %v (stderr: %s)", pathInfo, err, stderrBuf.String())
+		}
 	}
 }
