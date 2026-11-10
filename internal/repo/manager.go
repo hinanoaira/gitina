@@ -183,12 +183,26 @@ func (m *Manager) Remove(ctx context.Context, repoPath string, force bool) (stri
 				return "", fmt.Errorf("failed to move local repository to trash: %w", err)
 			}
 		}
+		cleanEmptyParents(m.repoRoot, filepath.Dir(target))
 	}
 
 	if force {
 		return "permanently deleted", nil
 	}
 	return "moved to trash", nil
+}
+
+func cleanEmptyParents(root, dir string) {
+	root = filepath.Clean(root)
+	dir = filepath.Clean(dir)
+	for dir != root && strings.HasPrefix(dir, root) {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 0 {
+			break
+		}
+		_ = os.Remove(dir)
+		dir = filepath.Dir(dir)
+	}
 }
 
 // CleanTrash removes items in .trash older than the specified days.

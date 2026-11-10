@@ -144,8 +144,8 @@ func handleRepoRemove(globalConfig string, args []string) {
 	fs.BoolVar(&force, "force", false, "force permanent delete without moving to trash")
 	_ = fs.Parse(args)
 
-	targetRepo := fs.Arg(0)
-	if targetRepo == "" {
+	targets := fs.Args()
+	if len(targets) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: repository path is required (e.g. 'owner/repo.git')")
 		os.Exit(1)
 	}
@@ -157,13 +157,14 @@ func handleRepoRemove(globalConfig string, args []string) {
 	}
 
 	ctx := context.Background()
-	msg, err := mgr.Remove(ctx, targetRepo, force)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error deleting repository: %v\n", err)
-		os.Exit(1)
+	for _, targetRepo := range targets {
+		msg, err := mgr.Remove(ctx, targetRepo, force)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error deleting repository %q: %v\n", targetRepo, err)
+		} else {
+			fmt.Printf("%s: %s\n", targetRepo, msg)
+		}
 	}
-
-	fmt.Println(msg)
 }
 
 func handleRepoClean(globalConfig string, args []string) {
