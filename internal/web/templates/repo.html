@@ -358,7 +358,7 @@
         </div>
       {{end}}
 
-      <form action="/{{.RepoPath}}/tokens/generate" method="POST">
+      <form action="/{{.RepoPath}}/tokens/generate?tab=tokens" method="POST">
         <div class="form-group">
           <label>スコープ (権限)</label>
           <select name="scope">

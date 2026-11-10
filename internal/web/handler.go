@@ -265,9 +265,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tab := r.URL.Query().Get("tab")
+	if tab == "" {
+		tab = "code"
+	}
+
 	// PAT Generation action (RO, RW, Admin)
 	var generatedToken string
 	if strings.HasPrefix(sub, "tokens/generate") && r.Method == http.MethodPost {
+		tab = "tokens"
 		if user == "" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
@@ -305,11 +311,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ref := r.URL.Query().Get("ref")
 	if ref == "" {
 		ref = reader.GetDefaultBranch()
-	}
-
-	tab := r.URL.Query().Get("tab")
-	if tab == "" {
-		tab = "code"
 	}
 
 	// Clone URL

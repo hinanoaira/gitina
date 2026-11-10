@@ -134,4 +134,22 @@ func TestWebHandler(t *testing.T) {
 	if wAnonPrivate.Code != http.StatusFound {
 		t.Fatalf("expected redirect to login for private repo, got %d", wAnonPrivate.Code)
 	}
+
+	// 4. Generate PAT via POST /tokens/generate
+	reqPAT := httptest.NewRequest(http.MethodPost, "/sample/repo.git/tokens/generate", strings.NewReader("scope=rw&days=90"))
+	reqPAT.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqPAT.AddCookie(&http.Cookie{
+		Name:  sessionCookieName,
+		Value: adminToken,
+	})
+	wPAT := httptest.NewRecorder()
+	handler.ServeHTTP(wPAT, reqPAT)
+
+	if wPAT.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK after generating PAT, got %d", wPAT.Code)
+	}
+	patBody := wPAT.Body.String()
+	if !strings.Contains(patBody, "発行されたトークン（再表示されません）") || !strings.Contains(patBody, "patVal") {
+		t.Fatalf("expected generated PAT box in body, got:\n%s", patBody)
+	}
 }
