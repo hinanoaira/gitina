@@ -45,14 +45,28 @@ if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
     apt-get install -y "${MISSING_PKGS[@]}"
 fi
 
-# 4. Build or locate binary
-echo "[2/6] バイナリの準備中..."
+# 4. Stop existing daemon if running (to prevent ETXTBSY on update)
+echo "[2/6] サービスの稼働状況を確認中..."
+WAS_RUNNING=false
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet gitina 2>/dev/null; then
+    echo "実行中の gitina デーモンを検出しました。バイナリ更新のため安全に停止します..."
+    systemctl stop gitina
+    WAS_RUNNING=true
+fi
+
+# 5. Build or locate binary
+echo "[3/6] バイナリの準備・配置中..."
+TMP_BIN="/tmp/gitina_build_tmp.$$"
+trap 'rm -f "${TMP_BIN}"' EXIT
+
 if [ -f "${SCRIPT_DIR}/gitina" ]; then
     echo "カレントディレクトリの既存バイナリを使用します: ${SCRIPT_DIR}/gitina"
-    cp "${SCRIPT_DIR}/gitina" "${BIN_PATH}"
+    cp -f "${SCRIPT_DIR}/gitina" "${BIN_PATH}"
 elif command -v go >/dev/null 2>&1; then
     echo "Goコンパイラを検出しました。ソースからビルドします..."
-    (cd "${SCRIPT_DIR}" && go build -o "${BIN_PATH}" ./cmd/gitina)
+    (cd "${SCRIPT_DIR}" && go build -o "${TMP_BIN}" ./cmd/gitina)
+    cp -f "${TMP_BIN}" "${BIN_PATH}"
+    rm -f "${TMP_BIN}"
 else
     echo "エラー: 'gitina' バイナリが見つからず、'go' コマンドもインストールされていません。" >&2
     echo "以下のいずれかを実行してください:" >&2
@@ -64,8 +78,8 @@ fi
 chmod 755 "${BIN_PATH}"
 echo "バイナリを配置しました: ${BIN_PATH}"
 
-# 5. Service user & groups
-echo "[3/6] システムユーザー (git) の設定中..."
+# 6. Service user & groups
+echo "[4/7] システムユーザー (git) の設定中..."
 if ! getent group git >/dev/null 2>&1; then
     groupadd --system git
     echo "システムグループ 'git' を作成しました。"
@@ -76,16 +90,16 @@ if ! id -u git >/dev/null 2>&1; then
     echo "システムユーザー 'git' を作成しました。"
 fi
 
-# 6. Directories setup
-echo "[4/6] データディレクトリの作成と権限設定中..."
+# 7. Directories setup
+echo "[5/7] データディレクトリの作成と権限設定中..."
 mkdir -p "${DATA_DIR}/data/repositories"
 mkdir -p "${DATA_DIR}/data/lfs"
 mkdir -p "${DATA_DIR}/.trash"
 chown -R git:git "${DATA_DIR}"
 chmod 750 "${DATA_DIR}"
 
-# 7. Configuration setup
-echo "[5/6] 設定ファイルの準備中..."
+# 8. Configuration setup
+echo "[6/7] 設定ファイルの準備中..."
 mkdir -p "${CONF_DIR}"
 chown root:git "${CONF_DIR}"
 chmod 750 "${CONF_DIR}"
@@ -132,8 +146,8 @@ EOF
     echo "新しい設定ファイルを生成しました (ランダムJWTシークレット自動設定済み): ${CONF_FILE}"
 fi
 
-# 8. systemd service setup
-echo "[6/6] systemd サービスの設定中..."
+# 9. systemd service setup
+echo "[7/7] systemd サービスの設定中..."
 if [ -f "${SCRIPT_DIR}/gitina.service" ]; then
     cp "${SCRIPT_DIR}/gitina.service" "${SERVICE_FILE}"
 else
@@ -167,26 +181,42 @@ chmod 644 "${SERVICE_FILE}"
 systemctl daemon-reload
 systemctl enable gitina >/dev/null 2>&1
 
+# Restart service if it was running previously
+if [ "${WAS_RUNNING}" = true ]; then
+    echo "gitina サービスを再起動しています..."
+    systemctl start gitina
+fi
+
 echo ""
 echo "=============================================================================="
-echo " gitina のインストールが正常に完了しました！"
+if [ "${WAS_RUNNING}" = true ]; then
+    echo " gitina のアップデートおよび再起動が正常に完了しました！"
+else
+    echo " gitina のインストールが正常に完了しました！"
+fi
 echo "=============================================================================="
 echo ""
-echo "【次のステップ】"
-echo "1. 設定ファイルを編集してください:"
-echo "   sudo nano ${CONF_FILE}"
-echo "   - base_url (例: https://git.hns.jp)"
-echo "   - github.client_id & github.client_secret"
-echo "   - admins (GitHubユーザー名)"
-echo "   - 必要に応じて repository_storage や lfs の S3 設定"
+if [ "${WAS_RUNNING}" = true ]; then
+    echo "【ステータス確認】"
+    echo "  sudo systemctl status gitina"
+    echo "  journalctl -u gitina -f"
+else
+    echo "【次のステップ】"
+    echo "1. 設定ファイルを編集してください:"
+    echo "   sudo nano ${CONF_FILE}"
+    echo "   - base_url (例: https://git.hns.jp)"
+    echo "   - github.client_id & github.client_secret"
+    echo "   - admins (GitHubユーザー名)"
+    echo "   - 必要に応じて repository_storage や lfs の S3 設定"
+    echo ""
+    echo "2. サービスを起動してください:"
+    echo "   sudo systemctl start gitina"
+    echo ""
+    echo "3. 動作確認 & ログの確認:"
+    echo "   sudo systemctl status gitina"
+    echo "   journalctl -u gitina -f"
+fi
 echo ""
-echo "2. サービスを起動してください:"
-echo "   sudo systemctl start gitina"
-echo ""
-echo "3. 動作確認 & ログの確認:"
-echo "   sudo systemctl status gitina"
-echo "   journalctl -u gitina -f"
-echo ""
-echo "4. リポジトリ管理コマンドの確認:"
-echo "   gitina repo ls"
+echo "リポジトリ管理コマンド:"
+echo "  gitina repo ls"
 echo "=============================================================================="
