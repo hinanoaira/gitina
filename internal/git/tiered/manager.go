@@ -134,6 +134,10 @@ func (m *Manager) Acquire(ctx context.Context, repoPath string) (func(), error) 
 			release()
 			return nil, fmt.Errorf("failed to restore bundle to local cache: %w", err)
 		}
+		// Also restore gitina-meta.json if present on S3
+		localMetaPath := filepath.Join(fullLocalPath, "gitina-meta.json")
+		_ = m.s3.DownloadMetadata(ctx, repoPath, localMetaPath)
+
 		log.Printf("[Tiered] Restored %q to local cache successfully", repoPath)
 		touch(headPath)
 	} else {
@@ -191,6 +195,12 @@ func (m *Manager) Sync(ctx context.Context, repoPath string) error {
 	// Upload bundle to S3
 	if err := m.s3.UploadBundle(ctx, repoPath, tmpBundle); err != nil {
 		return fmt.Errorf("failed to upload bundle to S3: %w", err)
+	}
+
+	// Also sync gitina-meta.json if exists locally
+	localMetaPath := filepath.Join(fullLocalPath, "gitina-meta.json")
+	if err := m.s3.UploadMetadata(ctx, repoPath, localMetaPath); err != nil {
+		log.Printf("[Tiered] Warning: failed to upload metadata for %q: %v", repoPath, err)
 	}
 
 	log.Printf("[Tiered] Synced %q to S3 successfully", repoPath)

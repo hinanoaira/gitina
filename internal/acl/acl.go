@@ -1,6 +1,7 @@
 package acl
 
 import (
+	"errors"
 	"path"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,7 @@ const (
 type Manager struct {
 	admins       map[string]bool
 	repositories []config.RepositoryConfig
+	repoRoot     string
 }
 
 func NewManager(admins []string, repositories []config.RepositoryConfig) *Manager {
@@ -33,12 +35,73 @@ func NewManager(admins []string, repositories []config.RepositoryConfig) *Manage
 	}
 }
 
+// SetRepoRoot sets the filesystem root path for repositories to load dynamic metadata.
+func (m *Manager) SetRepoRoot(root string) {
+	m.repoRoot = root
+}
+
 // IsAdmin checks if the username is configured as an admin.
 func (m *Manager) IsAdmin(username string) bool {
 	if username == "" {
 		return false
 	}
 	return m.admins[strings.ToLower(strings.TrimSpace(username))]
+}
+
+// GetEffectiveConfig returns the resolved public status and collaborators for a repository,
+// taking dynamic gitina-meta.json into account over config.yaml defaults.
+func (m *Manager) GetEffectiveConfig(repoPath string) (isPublic bool, collaborators map[string]string) {
+	repoPath = normalizeRepoPath(repoPath)
+	collaborators = make(map[string]string)
+
+	// 1. Defaults from config.yaml
+	var matchedRule *config.RepositoryConfig
+	for i := range m.repositories {
+		rule := &m.repositories[i]
+		if matchPattern(rule.Path, repoPath) {
+			matchedRule = rule
+			break
+		}
+	}
+	if matchedRule != nil {
+		isPublic = matchedRule.Public
+		for u, lvl := range matchedRule.Collaborators {
+			collaborators[strings.ToLower(strings.TrimSpace(u))] = lvl
+		}
+	}
+
+	// 2. Override from dynamic gitina-meta.json if present
+	if m.repoRoot != "" {
+		dir := filepath.Join(m.repoRoot, repoPath)
+		if meta, err := LoadMetadata(dir); err == nil && meta != nil {
+			isPublic = meta.Public
+			if meta.Collaborators != nil {
+				// Metadata replaces or specifies the full collaborator list
+				collaborators = make(map[string]string)
+				for u, lvl := range meta.Collaborators {
+					collaborators[strings.ToLower(strings.TrimSpace(u))] = lvl
+				}
+			}
+		}
+	}
+
+	return isPublic, collaborators
+}
+
+// UpdateMetadata saves dynamic metadata to gitina-meta.json for a repository.
+func (m *Manager) UpdateMetadata(repoPath string, isPublic bool, collaborators map[string]string, updatedBy string) error {
+	if m.repoRoot == "" {
+		return errors.New("repoRoot not configured in ACL manager")
+	}
+	repoPath = normalizeRepoPath(repoPath)
+	dir := filepath.Join(m.repoRoot, repoPath)
+
+	meta := &RepoMetadata{
+		Public:        isPublic,
+		Collaborators: collaborators,
+		UpdatedBy:     updatedBy,
+	}
+	return SaveMetadata(dir, meta)
 }
 
 // CheckAccess determines the access level of a user for a given repository.
@@ -52,35 +115,17 @@ func (m *Manager) CheckAccess(username, repoPath string) AccessLevel {
 		return AccessReadWrite
 	}
 
-	// Find the most specific matching repository rule.
-	var matchedRule *config.RepositoryConfig
-	for i := range m.repositories {
-		rule := &m.repositories[i]
-		if matchPattern(rule.Path, repoPath) {
-			matchedRule = rule
-			// We can continue or take the first match. Since repositories are ordered,
-			// earlier rules take precedence or last rule takes precedence. Let's take the first match.
-			break
-		}
-	}
-
-	if matchedRule == nil {
-		// Not matched by any rule: private and no access by default.
-		return AccessNone
-	}
+	isPublic, collaborators := m.GetEffectiveConfig(repoPath)
 
 	// Check user in collaborators
 	var userCollab AccessLevel = AccessNone
-	if username != "" && matchedRule.Collaborators != nil {
-		for u, lvl := range matchedRule.Collaborators {
-			if strings.EqualFold(u, username) {
-				lvl = strings.ToLower(strings.TrimSpace(lvl))
-				if lvl == "rw" {
-					userCollab = AccessReadWrite
-				} else if lvl == "ro" || lvl == "r" {
-					userCollab = AccessReadOnly
-				}
-				break
+	if username != "" {
+		if lvl, ok := collaborators[username]; ok {
+			lvl = strings.ToLower(strings.TrimSpace(lvl))
+			if lvl == "rw" {
+				userCollab = AccessReadWrite
+			} else if lvl == "ro" || lvl == "r" {
+				userCollab = AccessReadOnly
 			}
 		}
 	}
@@ -89,8 +134,7 @@ func (m *Manager) CheckAccess(username, repoPath string) AccessLevel {
 		return AccessReadWrite
 	}
 
-	// If repository is public, read access is granted to anyone (anonymous or authenticated)
-	if matchedRule.Public {
+	if isPublic {
 		return AccessReadOnly
 	}
 

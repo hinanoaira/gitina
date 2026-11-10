@@ -81,6 +81,60 @@ func (s *S3Client) objectKey(repoPath string) string {
 	return s.prefix + repoPath + ".bundle"
 }
 
+func (s *S3Client) metaKey(repoPath string) string {
+	repoPath = strings.Trim(filepath.ToSlash(repoPath), "/")
+	if !strings.HasSuffix(repoPath, ".git") {
+		repoPath += ".git"
+	}
+	return s.prefix + repoPath + ".meta.json"
+}
+
+// UploadMetadata uploads local gitina-meta.json to S3 if it exists.
+func (s *S3Client) UploadMetadata(ctx context.Context, repoPath, localMetaPath string) error {
+	f, err := os.Open(localMetaPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	defer f.Close()
+
+	key := s.metaKey(repoPath)
+	_, err = s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+		Body:   f,
+	})
+	return err
+}
+
+// DownloadMetadata downloads gitina-meta.json from S3 if present.
+func (s *S3Client) DownloadMetadata(ctx context.Context, repoPath, destMetaPath string) error {
+	key := s.metaKey(repoPath)
+	resp, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		var notFound *types.NotFound
+		if errors.As(err, &notFound) || strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "NoSuchKey") {
+			return nil
+		}
+		return err
+	}
+	defer resp.Body.Close()
+
+	f, err := os.Create(destMetaPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = io.Copy(f, resp.Body)
+	return err
+}
+
 // Exists checks if the repository bundle exists on S3.
 func (s *S3Client) Exists(ctx context.Context, repoPath string) (bool, error) {
 	key := s.objectKey(repoPath)
