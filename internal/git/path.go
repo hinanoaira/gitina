@@ -8,10 +8,6 @@ import (
 
 var (
 	ErrInvalidPath = errors.New("invalid or malicious repository path")
-
-	suspiciousExtensions = []string{
-		".php", ".asp", ".aspx", ".jsp", ".cgi", ".env", ".ini", ".conf", ".sql", ".bak",
-	}
 )
 
 // Known Git and LFS endpoints
@@ -123,7 +119,7 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 	return nil, ErrInvalidPath
 }
 
-// validateRepoPath validates that repository name is clean and does not match scanner/malicious patterns.
+// validateRepoPath validates that repository name is clean and does not match malicious patterns.
 func validateRepoPath(repoPart string) bool {
 	clean := strings.Trim(filepath.ToSlash(repoPart), "/")
 	if clean == "" || clean == ".git" {
@@ -134,28 +130,15 @@ func validateRepoPath(repoPart string) bool {
 		if part == "" {
 			return false
 		}
+		// Any hidden directory segment (starting with dot) is disallowed
+		if strings.HasPrefix(part, ".") {
+			return false
+		}
 		// If last part ends with .git, check base name
 		if i == len(parts)-1 && strings.HasSuffix(part, ".git") {
 			base := strings.TrimSuffix(part, ".git")
 			if base == "" || strings.HasPrefix(base, ".") {
 				return false
-			}
-			lowerBase := strings.ToLower(base)
-			for _, ext := range suspiciousExtensions {
-				if strings.HasSuffix(lowerBase, ext) {
-					return false
-				}
-			}
-		} else {
-			// Subdirectory segment
-			if strings.HasPrefix(part, ".") {
-				return false
-			}
-			lowerPart := strings.ToLower(part)
-			for _, ext := range suspiciousExtensions {
-				if strings.HasSuffix(lowerPart, ext) || strings.Contains(lowerPart, ext+"/") {
-					return false
-				}
 			}
 		}
 	}

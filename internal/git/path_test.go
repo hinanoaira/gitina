@@ -57,11 +57,19 @@ func TestParseURLPath(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			input:   "/webroot/index.php/_environment.git",
-			wantErr: true,
+			input:    "/phpinfo.php.git",
+			wantRepo: "phpinfo.php.git",
+			wantSub:  "",
+			wantLFS:  false,
 		},
 		{
-			input:   "/phpinfo.php.git",
+			input:    "/my-org/project.php.git/info/refs",
+			wantRepo: "my-org/project.php.git",
+			wantSub:  "info/refs",
+			wantLFS:  false,
+		},
+		{
+			input:   "/.hidden/repo.git",
 			wantErr: true,
 		},
 		{
