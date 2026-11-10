@@ -148,6 +148,27 @@ func (h *GCMHandler) HandleGitHubCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// If the redirect URI is a web path (starts with "/" or matches BaseURL), set web session cookie
+	if strings.HasPrefix(sess.GCMRedirectURI, "/") || strings.HasPrefix(sess.GCMRedirectURI, h.cfg.Server.BaseURL) {
+		token, _, err := h.tokenMgr.GenerateAccessToken(githubUser)
+		if err == nil {
+			http.SetCookie(w, &http.Cookie{
+				Name:     "gitina_session",
+				Value:    token,
+				Path:     "/",
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   90 * 24 * 3600,
+			})
+		}
+		dest := sess.GCMRedirectURI
+		if dest == "" {
+			dest = "/"
+		}
+		http.Redirect(w, r, dest, http.StatusFound)
+		return
+	}
+
 	// Create one-time auth code for GCM
 	authCode := "code_" + randomString(24)
 	h.authCodesMu.Lock()
@@ -313,33 +334,50 @@ func (h *GCMHandler) HandleVersion(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleLogout handles GET /login/oauth/logout
+func (h *GCMHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "gitina_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
 // ExtractUsername parses the username from HTTP Authorization header (Bearer or Basic).
 func (h *GCMHandler) ExtractUsername(r *http.Request) string {
+	u, _ := h.AuthenticateRequest(r, "", false)
+	return u
+}
+
+// AuthenticateRequest verifies Authorization header and checks PAT scope/repo permissions.
+func (h *GCMHandler) AuthenticateRequest(r *http.Request, repoPath string, isWrite bool) (username string, tokenAllowed bool) {
 	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		return ""
-	}
-
-	// 1. Bearer token
+	var tokenStr string
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if user, err := h.tokenMgr.ValidateAccessToken(token); err == nil {
-			return user
-		}
-		return ""
-	}
-
-	// 2. Basic auth
-	u, p, ok := r.BasicAuth()
-	if ok {
-		// Could be username:token or token:x-oauth-basic or token:anything
-		if user, err := h.tokenMgr.ValidateAccessToken(p); err == nil {
-			return user
-		}
-		if user, err := h.tokenMgr.ValidateAccessToken(u); err == nil {
-			return user
+		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+	} else if u, p, ok := r.BasicAuth(); ok {
+		if _, err := h.tokenMgr.ValidateAccessToken(p); err == nil {
+			tokenStr = p
+		} else if _, err := h.tokenMgr.ValidateAccessToken(u); err == nil {
+			tokenStr = u
 		}
 	}
 
-	return ""
+	if tokenStr == "" {
+		return "", false
+	}
+
+	u, allowed, err := h.tokenMgr.ValidatePermission(tokenStr, repoPath, isWrite)
+	if err != nil {
+		return "", false
+	}
+	return u, allowed
+}
+
+// TokenManager returns the underlying TokenManager.
+func (h *GCMHandler) TokenManager() *TokenManager {
+	return h.tokenMgr
 }

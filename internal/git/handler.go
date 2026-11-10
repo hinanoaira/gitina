@@ -97,12 +97,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		isWrite = false
 	}
 
-	// Extract authenticated username
-	username := h.gcmHandler.ExtractUsername(r)
+	// Extract authenticated username and verify token permissions (PAT scope check)
+	username, tokenAllowed := h.gcmHandler.AuthenticateRequest(r, parsed.RepoPath, isWrite)
 
 	// Check access
 	if isWrite {
-		if !h.aclMgr.CanWrite(username, parsed.RepoPath) {
+		if !tokenAllowed || !h.aclMgr.CanWrite(username, parsed.RepoPath) {
 			if username == "" {
 				w.Header().Set("WWW-Authenticate", `Basic realm="Gitea"`)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -112,7 +112,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		if !h.aclMgr.CanRead(username, parsed.RepoPath) {
+		if !h.aclMgr.CanRead(username, parsed.RepoPath) || (username != "" && !tokenAllowed) {
 			if username == "" {
 				w.Header().Set("WWW-Authenticate", `Basic realm="Gitea"`)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)

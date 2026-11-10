@@ -36,4 +36,28 @@ func TestJWT(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for token with different secret, got nil")
 	}
+
+	// PAT tests
+	roPAT, err := tm.GeneratePAT("alice", "org/repo.git", "ro", 0)
+	if err != nil {
+		t.Fatalf("GeneratePAT failed: %v", err)
+	}
+
+	// alice roPAT reading org/repo.git -> allowed
+	u, ok, err := tm.ValidatePermission(roPAT, "org/repo.git", false)
+	if err != nil || !ok || u != "alice" {
+		t.Fatalf("expected roPAT read allowed, got u=%s, ok=%v, err=%v", u, ok, err)
+	}
+
+	// alice roPAT writing org/repo.git -> denied
+	_, ok, err = tm.ValidatePermission(roPAT, "org/repo.git", true)
+	if err != nil || ok {
+		t.Fatalf("expected roPAT write denied, got ok=%v, err=%v", ok, err)
+	}
+
+	// alice roPAT accessing another repo -> denied
+	_, ok, err = tm.ValidatePermission(roPAT, "other/repo.git", false)
+	if err != nil || ok {
+		t.Fatalf("expected roPAT access to other repo denied, got ok=%v, err=%v", ok, err)
+	}
 }
