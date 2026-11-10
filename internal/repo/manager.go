@@ -33,6 +33,11 @@ func NewManager(repoRoot string, tieredMgr *tiered.Manager) *Manager {
 	}
 }
 
+// RepoRoot returns the configured local repository root directory.
+func (m *Manager) RepoRoot() string {
+	return m.repoRoot
+}
+
 // List returns a list of all bare repositories hosted under repoRoot or on S3.
 func (m *Manager) List(ctx context.Context) ([]RepoInfo, error) {
 	if m.tieredMgr != nil && m.tieredMgr.IsTiered() {
@@ -81,6 +86,15 @@ func (m *Manager) listTiered(ctx context.Context) ([]RepoInfo, error) {
 }
 
 func (m *Manager) listLocal() ([]RepoInfo, error) {
+	if stat, err := os.Stat(m.repoRoot); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("repository root %q does not exist", m.repoRoot)
+		}
+		return nil, fmt.Errorf("cannot access repository root %q: %w", m.repoRoot, err)
+	} else if !stat.IsDir() {
+		return nil, fmt.Errorf("repository root %q is not a directory", m.repoRoot)
+	}
+
 	var list []RepoInfo
 
 	err := filepath.WalkDir(m.repoRoot, func(p string, d fs.DirEntry, err error) error {

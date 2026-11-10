@@ -93,9 +93,8 @@ func Load(path string) (*Config, error) {
 	if cfg.Server.RepoRoot == "" {
 		cfg.Server.RepoRoot = "./data/repositories"
 	}
-	if absRoot, err := filepath.Abs(cfg.Server.RepoRoot); err == nil {
-		cfg.Server.RepoRoot = absRoot
-	}
+	cfg.Server.RepoRoot = resolveConfigPath(path, cfg.Server.RepoRoot)
+
 	if cfg.Server.JWTSecret == "" {
 		return nil, fmt.Errorf("server.jwt_secret is required")
 	}
@@ -120,9 +119,55 @@ func Load(path string) (*Config, error) {
 	if cfg.LFS.Storage == "" {
 		cfg.LFS.Storage = "local"
 	}
-	if cfg.LFS.Storage == "local" && cfg.LFS.Local.Path == "" {
-		cfg.LFS.Local.Path = "./data/lfs"
+	if cfg.LFS.Storage == "local" {
+		if cfg.LFS.Local.Path == "" {
+			cfg.LFS.Local.Path = "./data/lfs"
+		}
+		cfg.LFS.Local.Path = resolveConfigPath(path, cfg.LFS.Local.Path)
 	}
 
 	return &cfg, nil
+}
+
+// resolveConfigPath resolves relative paths against:
+// 1. Current working directory (if exists)
+// 2. Config file directory (if exists)
+// 3. /var/lib/gitina (standard service working directory, if exists)
+// 4. Fallback: absolute path based on cwd
+func resolveConfigPath(configFilePath, targetPath string) string {
+	if filepath.IsAbs(targetPath) {
+		return filepath.Clean(targetPath)
+	}
+
+	// 1. Check current working directory
+	if cwdAbs, err := filepath.Abs(targetPath); err == nil {
+		if _, err := os.Stat(cwdAbs); err == nil {
+			return cwdAbs
+		}
+	}
+
+	// 2. Check relative to config file location
+	if configFilePath != "" {
+		cfgDir := filepath.Dir(configFilePath)
+		joined := filepath.Join(cfgDir, targetPath)
+		if _, err := os.Stat(joined); err == nil {
+			if abs, err := filepath.Abs(joined); err == nil {
+				return abs
+			}
+			return joined
+		}
+	}
+
+	// 3. Check /var/lib/gitina
+	varLibCandidate := filepath.Join("/var/lib/gitina", targetPath)
+	if _, err := os.Stat(varLibCandidate); err == nil {
+		return varLibCandidate
+	}
+
+	// Default fallback to cwd absolute
+	cwdAbs, err := filepath.Abs(targetPath)
+	if err == nil {
+		return cwdAbs
+	}
+	return targetPath
 }

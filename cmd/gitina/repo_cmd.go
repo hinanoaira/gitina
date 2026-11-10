@@ -5,26 +5,31 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"text/tabwriter"
 
 	"gitina/internal/config"
 	"gitina/internal/git/tiered"
 	"gitina/internal/repo"
 )
 
-func runRepoCmd(args []string) {
+func runRepoCmd(globalConfig string, args []string) {
 	if len(args) == 0 {
 		printRepoHelp()
 		os.Exit(1)
 	}
 
 	sub := args[0]
+	subArgs := args[1:]
+
 	switch sub {
 	case "ls", "list":
-		handleRepoList(args[1:])
+		handleRepoList(globalConfig, subArgs)
 	case "rm", "delete":
-		handleRepoRemove(args[1:])
+		handleRepoRemove(globalConfig, subArgs)
 	case "clean":
-		handleRepoClean(args[1:])
+		handleRepoClean(globalConfig, subArgs)
+	case "-h", "--help", "help":
+		printRepoHelp()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown sub-command: %s\n", sub)
 		printRepoHelp()
@@ -41,7 +46,7 @@ func printRepoHelp() {
 	fmt.Println("  clean              Purge old repositories from .trash")
 	fmt.Println()
 	fmt.Println("Options:")
-	fmt.Println("  -c <config.yaml>   Path to configuration file (default: auto-detect ./config.yaml or /etc/gitina/config.yaml)")
+	fmt.Println("  -c <config.yaml>   Path to configuration file (default: auto-detect)")
 	fmt.Println("  -f, --force        (for rm) Permanently delete without moving to trash")
 	fmt.Println("  --days <N>         (for clean) Purge items older than N days (default: 30)")
 }
@@ -53,11 +58,16 @@ func findConfigFile(flagVal string) string {
 	if env := os.Getenv("GITINA_CONFIG"); env != "" {
 		return env
 	}
-	if _, err := os.Stat("config.yaml"); err == nil {
-		return "config.yaml"
+	candidates := []string{
+		"config.yaml",
+		"./config.yaml",
+		"/etc/gitina/config.yaml",
+		"/var/lib/gitina/config.yaml",
 	}
-	if _, err := os.Stat("/etc/gitina/config.yaml"); err == nil {
-		return "/etc/gitina/config.yaml"
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
 	}
 	return "config.yaml"
 }
@@ -75,10 +85,13 @@ func loadRepoMgr(configPath string) (*repo.Manager, error) {
 	return repo.NewManager(cfg.Server.RepoRoot, tieredMgr), nil
 }
 
-func handleRepoList(args []string) {
-	configPath := "config.yaml"
+func handleRepoList(globalConfig string, args []string) {
+	configPath := globalConfig
+	if configPath == "" {
+		configPath = "config.yaml"
+	}
 	fs := flag.NewFlagSet("repo ls", flag.ExitOnError)
-	fs.StringVar(&configPath, "c", "config.yaml", "config path")
+	fs.StringVar(&configPath, "c", configPath, "config path")
 	_ = fs.Parse(args)
 
 	mgr, err := loadRepoMgr(configPath)
@@ -95,41 +108,47 @@ func handleRepoList(args []string) {
 	}
 
 	if len(list) == 0 {
-		fmt.Println("No repositories found.")
+		fmt.Printf("No repositories found under %s\n", mgr.RepoRoot())
 		return
 	}
 
-	fmt.Printf("%-38s %-14s %-10s %s\n", "REPOSITORY", "STORAGE", "SIZE", "UPDATED AT")
-	fmt.Println("----------------------------------------------------------------------------------------")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "REPOSITORY\tSTORAGE\tCACHED\tSIZE\tLAST MODIFIED")
+
 	for _, r := range list {
-		storageStatus := r.Storage
-		if r.Storage == "s3" {
-			if r.IsCached {
-				storageStatus = "s3 [CACHED]"
-			} else {
-				storageStatus = "s3 [S3-ONLY]"
-			}
+		cachedStr := "yes"
+		if !r.IsCached {
+			cachedStr = "no"
 		}
-		fmt.Printf("%-38s %-14s %-10s %s\n", r.Path, storageStatus, formatSize(r.DiskSize), r.UpdatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			r.Path,
+			r.Storage,
+			cachedStr,
+			formatBytes(r.DiskSize),
+			r.UpdatedAt.Format("2006-01-02 15:04:05"),
+		)
 	}
+	_ = w.Flush()
 }
 
-func handleRepoRemove(args []string) {
-	configPath := "config.yaml"
+func handleRepoRemove(globalConfig string, args []string) {
+	configPath := globalConfig
+	if configPath == "" {
+		configPath = "config.yaml"
+	}
 	force := false
 
 	fs := flag.NewFlagSet("repo rm", flag.ExitOnError)
-	fs.StringVar(&configPath, "c", "config.yaml", "config path")
-	fs.BoolVar(&force, "f", false, "force permanent delete")
-	fs.BoolVar(&force, "force", false, "force permanent delete")
+	fs.StringVar(&configPath, "c", configPath, "config path")
+	fs.BoolVar(&force, "f", false, "force permanent delete without moving to trash")
+	fs.BoolVar(&force, "force", false, "force permanent delete without moving to trash")
 	_ = fs.Parse(args)
 
-	extra := fs.Args()
-	if len(extra) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: missing repository path")
+	targetRepo := fs.Arg(0)
+	if targetRepo == "" {
+		fmt.Fprintln(os.Stderr, "Error: repository path is required (e.g. 'owner/repo.git')")
 		os.Exit(1)
 	}
-	repoPath := extra[0]
 
 	mgr, err := loadRepoMgr(configPath)
 	if err != nil {
@@ -138,22 +157,25 @@ func handleRepoRemove(args []string) {
 	}
 
 	ctx := context.Background()
-	msg, err := mgr.Remove(ctx, repoPath, force)
+	msg, err := mgr.Remove(ctx, targetRepo, force)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error deleting repository: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Repository %q %s.\n", repoPath, msg)
+	fmt.Println(msg)
 }
 
-func handleRepoClean(args []string) {
-	configPath := "config.yaml"
+func handleRepoClean(globalConfig string, args []string) {
+	configPath := globalConfig
+	if configPath == "" {
+		configPath = "config.yaml"
+	}
 	days := 30
 
 	fs := flag.NewFlagSet("repo clean", flag.ExitOnError)
-	fs.StringVar(&configPath, "c", "config.yaml", "config path")
-	fs.IntVar(&days, "days", 30, "clean repositories older than N days")
+	fs.StringVar(&configPath, "c", configPath, "config path")
+	fs.IntVar(&days, "days", 30, "purge trash items older than N days")
 	_ = fs.Parse(args)
 
 	mgr, err := loadRepoMgr(configPath)
@@ -162,16 +184,16 @@ func handleRepoClean(args []string) {
 		os.Exit(1)
 	}
 
-	cleaned, err := mgr.CleanTrash(days)
+	deleted, err := mgr.CleanTrash(days)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error cleaning trash: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Cleaned %d expired repository/repositories from .trash.\n", cleaned)
+	fmt.Printf("Purged %d repository(ies) older than %d days from trash.\n", deleted, days)
 }
 
-func formatSize(b int64) string {
+func formatBytes(b int64) string {
 	const unit = 1024
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
@@ -181,5 +203,5 @@ func formatSize(b int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
