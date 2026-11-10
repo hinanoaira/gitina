@@ -8,6 +8,10 @@ import (
 
 var (
 	ErrInvalidPath = errors.New("invalid or malicious repository path")
+
+	suspiciousExtensions = []string{
+		".php", ".asp", ".aspx", ".jsp", ".cgi", ".env", ".ini", ".conf", ".sql", ".bak",
+	}
 )
 
 // Known Git and LFS endpoints
@@ -65,6 +69,10 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 				repoPart = repoPart + ".git"
 			}
 
+			if !validateRepoPath(repoPart) {
+				return nil, ErrInvalidPath
+			}
+
 			isLFS := strings.HasPrefix(subPart, "info/lfs")
 			return &ParsedRequest{
 				RepoPath: repoPart,
@@ -78,6 +86,9 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 	if idx := strings.Index(urlPath, ".git/"); idx != -1 {
 		repoPart := urlPath[:idx+4]
 		subPart := strings.Trim(urlPath[idx+5:], "/")
+		if !validateRepoPath(repoPart) {
+			return nil, ErrInvalidPath
+		}
 		return &ParsedRequest{
 			RepoPath: repoPart,
 			SubPath:  subPart,
@@ -86,6 +97,9 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 	}
 
 	if strings.HasSuffix(urlPath, ".git") {
+		if !validateRepoPath(urlPath) {
+			return nil, ErrInvalidPath
+		}
 		return &ParsedRequest{
 			RepoPath: urlPath,
 			SubPath:  "",
@@ -95,12 +109,55 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 
 	// Also support URLs without .git (e.g. "path/to/repo")
 	if !strings.Contains(filepath.Base(urlPath), ".") {
+		repoPart := urlPath + ".git"
+		if !validateRepoPath(repoPart) {
+			return nil, ErrInvalidPath
+		}
 		return &ParsedRequest{
-			RepoPath: urlPath + ".git",
+			RepoPath: repoPart,
 			SubPath:  "",
 			IsLFS:    false,
 		}, nil
 	}
 
 	return nil, ErrInvalidPath
+}
+
+// validateRepoPath validates that repository name is clean and does not match scanner/malicious patterns.
+func validateRepoPath(repoPart string) bool {
+	clean := strings.Trim(filepath.ToSlash(repoPart), "/")
+	if clean == "" || clean == ".git" {
+		return false
+	}
+	parts := strings.Split(clean, "/")
+	for i, part := range parts {
+		if part == "" {
+			return false
+		}
+		// If last part ends with .git, check base name
+		if i == len(parts)-1 && strings.HasSuffix(part, ".git") {
+			base := strings.TrimSuffix(part, ".git")
+			if base == "" || strings.HasPrefix(base, ".") {
+				return false
+			}
+			lowerBase := strings.ToLower(base)
+			for _, ext := range suspiciousExtensions {
+				if strings.HasSuffix(lowerBase, ext) {
+					return false
+				}
+			}
+		} else {
+			// Subdirectory segment
+			if strings.HasPrefix(part, ".") {
+				return false
+			}
+			lowerPart := strings.ToLower(part)
+			for _, ext := range suspiciousExtensions {
+				if strings.HasSuffix(lowerPart, ext) || strings.Contains(lowerPart, ext+"/") {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
