@@ -355,26 +355,35 @@ func (h *GCMHandler) ExtractUsername(r *http.Request) string {
 // AuthenticateRequest verifies Authorization header and checks PAT scope/repo permissions.
 func (h *GCMHandler) AuthenticateRequest(r *http.Request, repoPath string, isWrite bool) (username string, tokenAllowed bool) {
 	authHeader := r.Header.Get("Authorization")
-	var tokenStr string
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		tokenStr = strings.TrimPrefix(authHeader, "Bearer ")
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		u, allowed, err := h.tokenMgr.ValidatePermission(tokenStr, repoPath, isWrite)
+		if err == nil {
+			return u, allowed
+		}
 	} else if u, p, ok := r.BasicAuth(); ok {
+		// 1. Check PATStore if ID and Secret (Basic Auth: ID:Secret)
+		if patStore := h.tokenMgr.PATStore(); patStore != nil {
+			if uname, ok := patStore.Validate(u, p, repoPath, isWrite); uname != "" {
+				return uname, ok
+			}
+		}
+
+		// 2. Fallback to JWT in password or username
 		if _, err := h.tokenMgr.ValidateAccessToken(p); err == nil {
-			tokenStr = p
+			uClaim, allowed, err := h.tokenMgr.ValidatePermission(p, repoPath, isWrite)
+			if err == nil {
+				return uClaim, allowed
+			}
 		} else if _, err := h.tokenMgr.ValidateAccessToken(u); err == nil {
-			tokenStr = u
+			uClaim, allowed, err := h.tokenMgr.ValidatePermission(u, repoPath, isWrite)
+			if err == nil {
+				return uClaim, allowed
+			}
 		}
 	}
 
-	if tokenStr == "" {
-		return "", false
-	}
-
-	u, allowed, err := h.tokenMgr.ValidatePermission(tokenStr, repoPath, isWrite)
-	if err != nil {
-		return "", false
-	}
-	return u, allowed
+	return "", false
 }
 
 // TokenManager returns the underlying TokenManager.

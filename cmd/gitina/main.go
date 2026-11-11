@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gitina/internal/acl"
@@ -117,6 +118,12 @@ func runServeCmd(globalConfig string, args []string) {
 
 	// 2. Auth & GCM Handlers
 	tokenMgr := auth.NewTokenManager(cfg.Server.JWTSecret)
+	patStorePath := filepath.Join(cfg.Server.RepoRoot, ".tokens.json")
+	if patStore, err := auth.NewPATStore(patStorePath); err == nil {
+		tokenMgr.SetPATStore(patStore)
+	} else {
+		log.Printf("Warning: failed to initialize PAT store: %v", err)
+	}
 	gcmHandler := auth.NewGCMHandler(cfg, tokenMgr, aclMgr)
 
 	// 3. Storage Backend for LFS

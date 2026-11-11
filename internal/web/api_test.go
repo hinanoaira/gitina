@@ -75,6 +75,8 @@ func setupTestAPIEnv(t *testing.T) (*Handler, string, func()) {
 	aclMgr := acl.NewManager(cfg.Admins, cfg.Repositories)
 	aclMgr.SetRepoRoot(repoRoot)
 	tokenMgr := auth.NewTokenManager(cfg.Server.JWTSecret)
+	patStore, _ := auth.NewPATStore(filepath.Join(repoRoot, ".tokens.json"))
+	tokenMgr.SetPATStore(patStore)
 	repoMgr := repo.NewManager(repoRoot, nil)
 
 	handler, err := NewHandler(cfg, aclMgr, tokenMgr, repoMgr, nil)
@@ -181,7 +183,7 @@ func TestAPIReposAndTree(t *testing.T) {
 		t.Errorf("expected at least 1 commit, got 0")
 	}
 
-	// 7. Test /api/v1/repos/test-api.git/tokens (PAT) with logged in user
+	// 7. Test /api/v1/repos/test-api.git/tokens (Create PAT with Name, ID, Secret)
 	wSession := httptest.NewRecorder()
 	handler.SetUserSession(wSession, "admin_user")
 	cookies := wSession.Result().Cookies()
@@ -190,7 +192,7 @@ func TestAPIReposAndTree(t *testing.T) {
 	}
 	sessionCookie := cookies[0]
 
-	tokenPayload := `{"days": "30", "scope": "rw"}`
+	tokenPayload := `{"name": "CI Token", "days": "30", "scope": "rw"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/repos/test-api.git/tokens", strings.NewReader(tokenPayload))
 	req.AddCookie(sessionCookie)
 	w = httptest.NewRecorder()
@@ -200,8 +202,41 @@ func TestAPIReposAndTree(t *testing.T) {
 	}
 	var tokenResp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &tokenResp)
-	if tokenResp["token"] == "" || tokenResp["scope"] != "rw" {
+	patID, _ := tokenResp["id"].(string)
+	patSecret, _ := tokenResp["token"].(string)
+	if patID == "" || patSecret == "" || tokenResp["scope"] != "rw" || tokenResp["name"] != "CI Token" {
 		t.Errorf("unexpected tokenResp: %v", tokenResp)
+	}
+
+	// 7.1 List PATs
+	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/repos/test-api.git/tokens", nil)
+	reqList.AddCookie(sessionCookie)
+	wList := httptest.NewRecorder()
+	handler.ServeAPI(wList, reqList)
+	if wList.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", wList.Code)
+	}
+	var listResp map[string][]map[string]interface{}
+	_ = json.Unmarshal(wList.Body.Bytes(), &listResp)
+	if len(listResp["tokens"]) != 1 || listResp["tokens"][0]["id"] != patID {
+		t.Errorf("expected 1 token in list matching ID, got %v", listResp)
+	}
+
+	// 7.2 Revoke PAT
+	reqRevoke := httptest.NewRequest(http.MethodDelete, "/api/v1/repos/test-api.git/tokens?id="+patID, nil)
+	reqRevoke.AddCookie(sessionCookie)
+	wRevoke := httptest.NewRecorder()
+	handler.ServeAPI(wRevoke, reqRevoke)
+	if wRevoke.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", wRevoke.Code)
+	}
+
+	// 7.3 Verify list is now empty
+	wListAfter := httptest.NewRecorder()
+	handler.ServeAPI(wListAfter, reqList)
+	_ = json.Unmarshal(wListAfter.Body.Bytes(), &listResp)
+	if len(listResp["tokens"]) != 0 {
+		t.Errorf("expected 0 tokens after revocation, got %v", listResp)
 	}
 
 	// 8. Test /api/v1/repos/test-api.git/settings/visibility (Admin)

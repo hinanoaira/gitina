@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"gitina/internal/auth"
 	"gitina/internal/git"
 	"gitina/internal/git/tiered"
 )
@@ -339,58 +340,98 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 		})
 
 	case "tokens":
-		if r.Method != http.MethodPost {
-			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
-			return
-		}
 		if user == "" {
-			writeError(w, http.StatusUnauthorized, "Authentication required to generate token")
+			writeError(w, http.StatusUnauthorized, "Authentication required to manage tokens")
 			return
 		}
 
-		var req struct {
-			Days  string `json:"days"`
-			Scope string `json:"scope"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-
-		scope := req.Scope
-		if !canWrite && scope != "ro" {
-			scope = "ro"
-		}
-		if scope != "ro" && scope != "rw" {
-			scope = "ro"
+		patStore := h.tokenMgr.PATStore()
+		if patStore == nil {
+			writeError(w, http.StatusInternalServerError, "PAT store is not configured")
+			return
 		}
 
-		var duration time.Duration
-		switch req.Days {
-		case "30":
-			duration = 30 * 24 * time.Hour
-		case "90":
-			duration = 90 * 24 * time.Hour
-		case "365":
-			duration = 365 * 24 * time.Hour
+		switch r.Method {
+		case http.MethodGet:
+			tokens := patStore.List(user, repoPath, isAdmin)
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"tokens": tokens,
+			})
+
+		case http.MethodPost:
+			var req struct {
+				Name  string `json:"name"`
+				Days  string `json:"days"`
+				Scope string `json:"scope"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&req)
+
+			scope := req.Scope
+			if !canWrite && scope != "ro" {
+				scope = "ro"
+			}
+			if scope != "ro" && scope != "rw" {
+				scope = "ro"
+			}
+
+			var duration time.Duration
+			switch req.Days {
+			case "30":
+				duration = 30 * 24 * time.Hour
+			case "90":
+				duration = 90 * 24 * time.Hour
+			case "365":
+				duration = 365 * 24 * time.Hour
+			default:
+				duration = 0 // unlimited
+			}
+
+			pat, rawSecret, err := patStore.Create(user, repoPath, req.Name, scope, duration)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "Failed to create token: "+err.Error())
+				return
+			}
+
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"id":         pat.ID,
+				"token":      rawSecret,
+				"name":       pat.Name,
+				"scope":      pat.Scope,
+				"created_at": pat.CreatedAt,
+				"expires_at": pat.ExpiresAt,
+			})
+
+		case http.MethodDelete:
+			targetID := r.URL.Query().Get("id")
+			if targetID == "" {
+				var req struct {
+					ID string `json:"id"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&req)
+				targetID = req.ID
+			}
+
+			if targetID == "" {
+				writeError(w, http.StatusBadRequest, "Missing token id")
+				return
+			}
+
+			if err := patStore.Revoke(targetID, user, isAdmin); err != nil {
+				if errors.Is(err, auth.ErrPATNotFound) {
+					writeError(w, http.StatusNotFound, "Token not found")
+					return
+				}
+				writeError(w, http.StatusForbidden, err.Error())
+				return
+			}
+
+			writeJSON(w, http.StatusOK, map[string]string{
+				"status": "revoked",
+			})
+
 		default:
-			duration = 0 // unlimited
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		}
-
-		tok, err := h.tokenMgr.GeneratePAT(user, repoPath, scope, duration)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to generate token: "+err.Error())
-			return
-		}
-
-		var expiresAt *time.Time
-		if duration > 0 {
-			exp := time.Now().Add(duration)
-			expiresAt = &exp
-		}
-
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"token":      tok,
-			"scope":      scope,
-			"expires_at": expiresAt,
-		})
 
 	case "settings/visibility":
 		if !isAdmin {

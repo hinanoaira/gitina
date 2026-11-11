@@ -20,13 +20,22 @@ type Claims struct {
 }
 
 type TokenManager struct {
-	secret []byte
+	secret   []byte
+	patStore *PATStore
 }
 
 func NewTokenManager(secret string) *TokenManager {
 	return &TokenManager{
 		secret: []byte(secret),
 	}
+}
+
+func (tm *TokenManager) SetPATStore(store *PATStore) {
+	tm.patStore = store
+}
+
+func (tm *TokenManager) PATStore() *PATStore {
+	return tm.patStore
 }
 
 // GenerateAccessToken generates a standard JWT access token valid for 90 days.
