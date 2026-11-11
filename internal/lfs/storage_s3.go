@@ -209,7 +209,7 @@ func (s *S3Storage) DeleteObjects(ctx context.Context, oids []string) error {
 			})
 		}
 
-		_, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		out, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 			Bucket: aws.String(s.bucket),
 			Delete: &types.Delete{
 				Objects: toDelete,
@@ -218,6 +218,21 @@ func (s *S3Storage) DeleteObjects(ctx context.Context, oids []string) error {
 		})
 		if err != nil {
 			return fmt.Errorf("failed to batch delete s3 lfs objects: %w", err)
+		}
+		if len(out.Errors) > 0 {
+			var errMsgs []string
+			for _, e := range out.Errors {
+				key := ""
+				if e.Key != nil {
+					key = *e.Key
+				}
+				msg := ""
+				if e.Message != nil {
+					msg = *e.Message
+				}
+				errMsgs = append(errMsgs, fmt.Sprintf("%s: %s", key, msg))
+			}
+			return fmt.Errorf("failed to delete %d objects from s3: %s", len(out.Errors), strings.Join(errMsgs, "; "))
 		}
 	}
 
