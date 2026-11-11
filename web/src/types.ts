@@ -74,8 +74,22 @@ export interface CommitsResponse {
   commits: CommitInfo[]
 }
 
-export interface TokenResponse {
-  token: string
+export interface TokenItem {
+  id: string
+  name: string
+  username: string
+  repo_path: string
   scope: string
+  created_at: string
+  expires_at?: string | null
+  last_used_at?: string | null
+}
+
+export interface TokenResponse {
+  id: string
+  token: string
+  name: string
+  scope: string
+  created_at: string
   expires_at: string | null
 }

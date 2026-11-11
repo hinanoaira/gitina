@@ -102,6 +102,15 @@
             <span>Commits</span>
           </button>
           <button
+            v-if="auth.user && repoInfo.can_read"
+            @click="switchTab('tokens')"
+            class="px-4 py-2 border-b-2 flex items-center space-x-2 transition-colors flex-shrink-0"
+            :class="currentTab === 'tokens' ? 'border-github-blue text-white font-semibold' : 'border-transparent text-github-muted hover:text-white'"
+          >
+            <Key class="w-4 h-4" />
+            <span>Access Tokens</span>
+          </button>
+          <button
             v-if="repoInfo.is_admin"
             @click="switchTab('settings')"
             class="px-4 py-2 border-b-2 flex items-center space-x-2 transition-colors flex-shrink-0"
@@ -225,6 +234,106 @@
           </div>
         </div>
 
+        <!-- ACCESS TOKENS TAB -->
+        <div v-else-if="currentTab === 'tokens'" class="space-y-6 max-w-5xl">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-github-border gap-4">
+            <div>
+              <h2 class="text-base font-bold text-white flex items-center space-x-2">
+                <Key class="w-5 h-5 text-github-blue" />
+                <span>Personal Access Tokens</span>
+              </h2>
+              <p class="text-xs text-github-muted mt-1">
+                Authenticate with Git over HTTP using Basic Authentication. Pass the <strong>Username (ID)</strong> and <strong>Password (Token)</strong>.
+              </p>
+            </div>
+            <button
+              @click="showTokenModal = true"
+              class="px-3.5 py-1.5 bg-github-green hover:bg-github-greenHover text-white rounded text-xs font-semibold flex items-center space-x-1.5 transition-colors shadow-sm self-start sm:self-auto"
+            >
+              <Key class="w-3.5 h-3.5" />
+              <span>Generate New Token</span>
+            </button>
+          </div>
+
+          <div v-if="loadingTokens" class="py-12 text-center text-xs text-github-muted">
+            <div class="inline-block w-6 h-6 border-2 border-github-border border-t-github-blue rounded-full animate-spin"></div>
+            <p class="mt-2">Loading access tokens...</p>
+          </div>
+
+          <div v-else-if="tokens.length === 0" class="py-12 text-center border border-dashed border-github-border rounded-lg bg-github-dark/40">
+            <Key class="w-8 h-8 text-github-muted mx-auto mb-2 opacity-50" />
+            <div class="text-sm font-semibold text-white">No personal access tokens</div>
+            <p class="text-xs text-github-muted mt-1">You haven't generated any access tokens for this repository yet.</p>
+          </div>
+
+          <div v-else class="border border-github-border rounded-lg bg-github-dark overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-github-subtle text-github-muted border-b border-github-border font-semibold uppercase tracking-wider text-[10px]">
+                  <tr>
+                    <th class="px-4 py-3">Token Name</th>
+                    <th class="px-4 py-3">Basic Auth ID</th>
+                    <th class="px-4 py-3">Scope</th>
+                    <th class="px-4 py-3">Created</th>
+                    <th class="px-4 py-3">Expires</th>
+                    <th class="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-github-border/40 text-github-text">
+                  <tr v-for="t in tokens" :key="t.id" class="hover:bg-github-subtle/30 transition-colors">
+                    <td class="px-4 py-3 font-semibold text-white">
+                      {{ t.name }}
+                    </td>
+                    <td class="px-4 py-3">
+                      <div class="flex items-center space-x-1.5 font-mono text-[11px] text-github-blue">
+                        <span>{{ t.id }}</span>
+                        <button
+                          @click="copyText(t.id)"
+                          title="Copy ID"
+                          class="p-1 text-github-muted hover:text-white transition-colors"
+                        >
+                          <Copy class="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                    <td class="px-4 py-3">
+                      <span
+                        class="text-[10px] uppercase font-mono px-2 py-0.5 rounded border"
+                        :class="t.scope === 'rw' ? 'bg-purple-950/60 text-purple-300 border-purple-800' : 'bg-blue-950/60 text-blue-300 border-blue-800'"
+                      >
+                        {{ t.scope === 'rw' ? 'Read / Write' : 'Read Only' }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-github-muted">
+                      {{ formatDate(t.created_at) }}
+                    </td>
+                    <td class="px-4 py-3">
+                      <template v-if="t.expires_at">
+                        <span v-if="isExpired(t.expires_at)" class="text-red-400 font-medium flex items-center space-x-1">
+                          <span>Expired ({{ new Date(t.expires_at).toLocaleDateString() }})</span>
+                        </span>
+                        <span v-else class="text-github-muted">
+                          {{ new Date(t.expires_at).toLocaleDateString() }}
+                        </span>
+                      </template>
+                      <span v-else class="text-github-muted">Never</span>
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                      <button
+                        @click="revoke(t.id, t.name)"
+                        :disabled="revokingId === t.id"
+                        class="px-2.5 py-1 text-xs text-red-400 hover:text-white bg-red-950/30 hover:bg-red-900 border border-red-900/60 rounded transition-colors"
+                      >
+                        {{ revokingId === t.id ? 'Revoking...' : 'Revoke' }}
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <!-- SETTINGS TAB (Admin Only) -->
         <div v-else-if="currentTab === 'settings' && repoInfo.is_admin" class="space-y-8 max-w-4xl">
           <!-- Visibility Card -->
@@ -343,6 +452,7 @@
       :repo-path="repoPath"
       :can-write="repoInfo?.can_write ?? false"
       @close="showTokenModal = false"
+      @created="loadTokens"
     />
   </div>
 </template>
@@ -364,7 +474,7 @@ import {
 } from '@lucide/vue'
 import { useAuthStore } from '../stores/auth'
 import { api } from '../api'
-import type { RepoDetail, TreeEntry, BlobContent, CommitInfo } from '../types'
+import type { RepoDetail, TreeEntry, BlobContent, CommitInfo, TokenItem } from '../types'
 import FileTree from '../components/FileTree.vue'
 import BlobViewer from '../components/BlobViewer.vue'
 import ReadmeViewer from '../components/ReadmeViewer.vue'
@@ -389,6 +499,10 @@ const loadingContent = ref(false)
 
 const commits = ref<CommitInfo[]>([])
 const loadingCommits = ref(false)
+
+const tokens = ref<TokenItem[]>([])
+const loadingTokens = ref(false)
+const revokingId = ref('')
 
 const showCloneMenu = ref(false)
 const cloneCopied = ref(false)
@@ -451,6 +565,8 @@ async function handleRouteQueryChange() {
     await loadCodeTabContent()
   } else if (tab === 'commits') {
     await loadCommits()
+  } else if (tab === 'tokens') {
+    await loadTokens()
   }
 }
 
@@ -578,5 +694,43 @@ async function deleteRepoAction() {
   } catch (err: any) {
     alert(err.message)
   }
+}
+
+// Token handlers
+async function loadTokens() {
+  loadingTokens.value = true
+  try {
+    const res = await api.getTokens(repoPath.value)
+    tokens.value = res.tokens || []
+  } catch {
+    tokens.value = []
+  } finally {
+    loadingTokens.value = false
+  }
+}
+
+async function revoke(id: string, name: string) {
+  if (!confirm(`Are you sure you want to revoke token "${name}"? Any Git clients using this token will immediately lose access.`)) {
+    return
+  }
+  revokingId.value = id
+  try {
+    await api.revokeToken(repoPath.value, id)
+    await loadTokens()
+  } catch (err: any) {
+    alert(err.message || 'Failed to revoke token')
+  } finally {
+    revokingId.value = ''
+  }
+}
+
+async function copyText(text: string) {
+  await navigator.clipboard.writeText(text)
+  alert('Copied to clipboard: ' + text)
+}
+
+function isExpired(dateStr?: string | null): boolean {
+  if (!dateStr) return false
+  return new Date().getTime() > new Date(dateStr).getTime()
 }
 </script>

@@ -1,4 +1,4 @@
-import type { UserInfo, RepoSummary, RepoDetail, TreeResponse, BlobResponse, CommitsResponse, TokenResponse } from './types'
+import type { UserInfo, RepoSummary, RepoDetail, TreeResponse, BlobResponse, CommitsResponse, TokenResponse, TokenItem } from './types'
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(url, {
@@ -54,10 +54,20 @@ export const api = {
     return request<CommitsResponse>(`/api/v1/repos/${repoPath}/commits?${q.toString()}`)
   },
 
-  generateToken(repoPath: string, days: string, scope: string): Promise<TokenResponse> {
+  getTokens(repoPath: string): Promise<{ tokens: TokenItem[] }> {
+    return request<{ tokens: TokenItem[] }>(`/api/v1/repos/${repoPath}/tokens`)
+  },
+
+  generateToken(repoPath: string, name: string, days: string, scope: string): Promise<TokenResponse> {
     return request<TokenResponse>(`/api/v1/repos/${repoPath}/tokens`, {
       method: 'POST',
-      body: JSON.stringify({ days, scope }),
+      body: JSON.stringify({ name, days, scope }),
+    })
+  },
+
+  revokeToken(repoPath: string, id: string): Promise<{ status: string }> {
+    return request<{ status: string }>(`/api/v1/repos/${repoPath}/tokens?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     })
   },
 

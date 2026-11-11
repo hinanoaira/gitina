@@ -14,30 +14,61 @@
       <!-- Generated Token View -->
       <div v-if="generatedToken" class="space-y-4">
         <div class="p-3 bg-emerald-950/40 border border-emerald-700/60 rounded-md text-xs text-emerald-300">
-          <strong>Token generated successfully!</strong> Make sure to copy your personal access token now. You won't be able to see it again!
+          <strong>Token generated successfully!</strong> Make sure to copy both your Username (ID) and Password (Token) now. You won't be able to see the password again!
         </div>
 
-        <div>
-          <label class="block text-xs font-semibold text-github-muted uppercase mb-1">Your Token</label>
-          <div class="flex items-center space-x-2">
-            <input
-              type="text"
-              readonly
-              :value="generatedToken.token"
-              class="w-full bg-github-darker border border-github-border px-3 py-2 rounded text-xs font-mono text-emerald-400 select-all focus:outline-none"
-            />
-            <button
-              @click="copyToken"
-              class="px-3 py-2 bg-github-green hover:bg-github-greenHover text-white rounded text-xs font-semibold flex items-center space-x-1 flex-shrink-0 transition-colors"
-            >
-              <Check v-if="copied" class="w-4 h-4" />
-              <Copy v-else class="w-4 h-4" />
-              <span>{{ copied ? 'Copied' : 'Copy' }}</span>
-            </button>
+        <div class="space-y-3 bg-github-darker p-3.5 rounded-md border border-github-border">
+          <!-- Basic Auth Username (ID) -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[11px] font-bold text-github-blue uppercase tracking-wider">Basic Auth Username (ID)</label>
+              <span class="text-[10px] text-github-muted">Pass as username in Git</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <input
+                type="text"
+                readonly
+                :value="generatedToken.id"
+                class="w-full bg-github-dark border border-github-border px-3 py-1.5 rounded text-xs font-mono text-white select-all focus:outline-none"
+              />
+              <button
+                @click="copyID"
+                class="px-2.5 py-1.5 bg-github-subtle hover:bg-github-border border border-github-border text-white rounded text-xs font-semibold flex items-center space-x-1 flex-shrink-0 transition-colors"
+              >
+                <Check v-if="copiedID" class="w-3.5 h-3.5 text-emerald-400" />
+                <Copy v-else class="w-3.5 h-3.5" />
+                <span>{{ copiedID ? 'Copied' : 'Copy' }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Basic Auth Password (Secret Token) -->
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Basic Auth Password (Token)</label>
+              <span class="text-[10px] text-github-muted">Pass as password in Git</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <input
+                type="text"
+                readonly
+                :value="generatedToken.token"
+                class="w-full bg-github-dark border border-github-border px-3 py-1.5 rounded text-xs font-mono text-emerald-400 select-all focus:outline-none"
+              />
+              <button
+                @click="copyToken"
+                class="px-2.5 py-1.5 bg-github-green hover:bg-github-greenHover text-white rounded text-xs font-semibold flex items-center space-x-1 flex-shrink-0 transition-colors"
+              >
+                <Check v-if="copiedToken" class="w-3.5 h-3.5" />
+                <Copy v-else class="w-3.5 h-3.5" />
+                <span>{{ copiedToken ? 'Copied' : 'Copy' }}</span>
+              </button>
+            </div>
           </div>
         </div>
 
         <div class="text-xs text-github-muted space-y-1">
+          <div>Name: <span class="text-white font-medium">{{ generatedToken.name }}</span></div>
           <div>Scope: <span class="font-mono text-github-text font-semibold">{{ generatedToken.scope.toUpperCase() }}</span></div>
           <div v-if="generatedToken.expires_at">Expires: <span class="text-github-text">{{ new Date(generatedToken.expires_at).toLocaleDateString() }}</span></div>
           <div v-else>Expires: <span class="text-github-text font-semibold">Never</span></div>
@@ -60,6 +91,17 @@
           <div class="text-xs font-mono text-github-text bg-github-darker px-3 py-2 border border-github-border rounded">
             {{ repoPath }}
           </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-github-muted uppercase mb-1.5">Token Name / Purpose</label>
+          <input
+            type="text"
+            v-model="tokenName"
+            required
+            placeholder="e.g. My Laptop, CI Runner, Backup script"
+            class="w-full bg-github-dark border border-github-border px-3 py-2 rounded text-xs text-github-text placeholder-github-muted focus:outline-none focus:border-github-blue"
+          />
         </div>
 
         <div>
@@ -121,7 +163,7 @@
           </button>
           <button
             type="submit"
-            :disabled="loading"
+            :disabled="loading || !tokenName.trim()"
             class="px-4 py-2 bg-github-green hover:bg-github-greenHover disabled:opacity-50 text-white rounded text-xs font-semibold transition-colors flex items-center space-x-1"
           >
             <span v-if="loading">Generating...</span>
@@ -145,21 +187,25 @@ const props = defineProps<{
   canWrite: boolean
 }>()
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'created'])
 
+const tokenName = ref('')
 const days = ref('30')
 const scope = ref(props.canWrite ? 'rw' : 'ro')
 const loading = ref(false)
 const errorMsg = ref('')
 const generatedToken = ref<TokenResponse | null>(null)
-const copied = ref(false)
+const copiedID = ref(false)
+const copiedToken = ref(false)
 
 async function generate() {
+  if (!tokenName.value.trim()) return
   loading.value = true
   errorMsg.value = ''
   try {
-    const res = await api.generateToken(props.repoPath, days.value, scope.value)
+    const res = await api.generateToken(props.repoPath, tokenName.value.trim(), days.value, scope.value)
     generatedToken.value = res
+    emit('created')
   } catch (err: any) {
     errorMsg.value = err.message || 'Failed to generate token'
   } finally {
@@ -167,17 +213,27 @@ async function generate() {
   }
 }
 
+async function copyID() {
+  if (!generatedToken.value) return
+  await navigator.clipboard.writeText(generatedToken.value.id)
+  copiedID.value = true
+  setTimeout(() => {
+    copiedID.value = false
+  }, 2000)
+}
+
 async function copyToken() {
   if (!generatedToken.value) return
   await navigator.clipboard.writeText(generatedToken.value.token)
-  copied.value = true
+  copiedToken.value = true
   setTimeout(() => {
-    copied.value = false
+    copiedToken.value = false
   }, 2000)
 }
 
 function close() {
   generatedToken.value = null
+  tokenName.value = ''
   errorMsg.value = ''
   emit('close')
 }
