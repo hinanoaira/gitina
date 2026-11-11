@@ -12,7 +12,6 @@
           </svg>
           <span class="font-bold text-lg tracking-tight">Gitina</span>
         </router-link>
-        <span class="text-xs text-github-muted bg-github-dark border border-github-border px-2 py-0.5 rounded-full">v0.1.0</span>
       </div>
 
       <!-- Right: User or Login -->

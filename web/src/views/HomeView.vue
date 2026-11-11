@@ -6,7 +6,6 @@
         <h1 class="text-2xl font-bold text-white tracking-tight flex items-center space-x-2">
           <span>Repositories</span>
         </h1>
-        <p class="text-xs text-github-muted mt-1">Lightweight self-hosted Git repositories with automated S3 tiered storage.</p>
       </div>
 
       <!-- Search Filter -->
