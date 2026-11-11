@@ -3,8 +3,6 @@ package git
 import (
 	"bufio"
 	"bytes"
-	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,12 +14,10 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"gitina/internal/acl"
 	"gitina/internal/auth"
 	"gitina/internal/config"
-	"gitina/internal/git/tiered"
 	"gitina/internal/lfs"
 )
 
@@ -30,11 +26,10 @@ type Handler struct {
 	aclMgr     *acl.Manager
 	gcmHandler *auth.GCMHandler
 	lfsHandler *lfs.Handler
-	tieredMgr  *tiered.Manager
 	gitBackend string
 }
 
-func NewHandler(cfg *config.Config, aclMgr *acl.Manager, gcmHandler *auth.GCMHandler, lfsHandler *lfs.Handler, tieredMgr *tiered.Manager) (*Handler, error) {
+func NewHandler(cfg *config.Config, aclMgr *acl.Manager, gcmHandler *auth.GCMHandler, lfsHandler *lfs.Handler) (*Handler, error) {
 	// Verify git executable is available in PATH
 	if _, err := exec.LookPath("git"); err != nil {
 		return nil, fmt.Errorf("git binary not found in PATH: %w", err)
@@ -54,7 +49,6 @@ func NewHandler(cfg *config.Config, aclMgr *acl.Manager, gcmHandler *auth.GCMHan
 		aclMgr:     aclMgr,
 		gcmHandler: gcmHandler,
 		lfsHandler: lfsHandler,
-		tieredMgr:  tieredMgr,
 		gitBackend: gitBackend,
 	}, nil
 }
@@ -124,36 +118,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 3. Acquire repository (tiered storage restore / local lock)
+	// 3. Ensure bare repository exists locally
 	// Only auto-create bare repository if:
 	// - This is a push operation (isWrite)
 	// - OR an authenticated user who has write access to this repo is cloning/initializing it
 	// Anonymous reads / scanners will NEVER trigger repository auto-creation.
 	autoCreate := isWrite || (username != "" && h.aclMgr.CanWrite(username, parsed.RepoPath))
 
-	if h.tieredMgr != nil {
-		release, err := h.tieredMgr.Acquire(r.Context(), parsed.RepoPath, autoCreate)
-		if err != nil {
-			if errors.Is(err, tiered.ErrRepoNotFound) {
-				http.NotFound(w, r)
-				return
-			}
-			http.Error(w, fmt.Sprintf("failed to acquire repository: %v", err), http.StatusInternalServerError)
+	fullRepoPath := filepath.Join(h.cfg.Server.RepoRoot, parsed.RepoPath)
+	if _, err := os.Stat(filepath.Join(fullRepoPath, "HEAD")); err != nil {
+		if !autoCreate {
+			http.NotFound(w, r)
 			return
 		}
-		defer release()
-	} else {
-		// Fallback: Ensure bare repository exists locally
-		fullRepoPath := filepath.Join(h.cfg.Server.RepoRoot, parsed.RepoPath)
-		if _, err := os.Stat(filepath.Join(fullRepoPath, "HEAD")); err != nil {
-			if !autoCreate {
-				http.NotFound(w, r)
-				return
-			}
-			if err := EnsureRepo(fullRepoPath); err != nil {
-				http.Error(w, fmt.Sprintf("failed to initialize repository: %v", err), http.StatusInternalServerError)
-				return
-			}
+		if err := EnsureRepo(fullRepoPath); err != nil {
+			http.Error(w, fmt.Sprintf("failed to initialize repository: %v", err), http.StatusInternalServerError)
+			return
 		}
 	}
 
@@ -164,17 +144,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.serveGitBackend(w, r, parsed.RepoPath, parsed.SubPath, username, absRepoRoot)
-
-	// 5. If it was a push (write), sync updated bundle to S3 asynchronously
-	if isWrite && h.tieredMgr != nil {
-		go func(repo string) {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
-			defer cancel()
-			if err := h.tieredMgr.Sync(ctx, repo); err != nil {
-				log.Printf("[Tiered] Async S3 sync error for %q: %v", repo, err)
-			}
-		}(parsed.RepoPath)
-	}
 }
 
 // serveGitBackend executes git-http-backend directly with streaming pipes (no spooling).

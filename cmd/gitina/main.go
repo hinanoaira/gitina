@@ -14,7 +14,6 @@ import (
 	"gitina/internal/auth"
 	"gitina/internal/config"
 	"gitina/internal/git"
-	"gitina/internal/git/tiered"
 	"gitina/internal/lfs"
 	"gitina/internal/repo"
 	"gitina/internal/web"
@@ -150,21 +149,15 @@ func runServeCmd(globalConfig string, args []string) {
 	lfsGC := lfs.NewGarbageCollector(cfg.Server.RepoRoot, storage, cfg.LFS.GC)
 	lfsGC.StartWorker(context.Background())
 
-	// 4. Tiered Storage Manager (S3 as master, local SSD as LRU cache)
-	tieredMgr, err := tiered.NewManager(context.Background(), cfg)
-	if err != nil {
-		log.Fatalf("Failed to initialize tiered storage manager: %v", err)
-	}
-
-	// 5. Repository Manager & Web UI Handler
-	repoMgr := repo.NewManager(cfg.Server.RepoRoot, tieredMgr)
-	webHandler, err := web.NewHandler(cfg, aclMgr, tokenMgr, repoMgr, tieredMgr)
+	// 4. Repository Manager & Web UI Handler
+	repoMgr := repo.NewManager(cfg.Server.RepoRoot)
+	webHandler, err := web.NewHandler(cfg, aclMgr, tokenMgr, repoMgr)
 	if err != nil {
 		log.Fatalf("Failed to initialize web UI handler: %v", err)
 	}
 
-	// 6. Git Smart HTTP Handler
-	gitHandler, err := git.NewHandler(cfg, aclMgr, gcmHandler, lfsHandler, tieredMgr)
+	// 5. Git Smart HTTP Handler
+	gitHandler, err := git.NewHandler(cfg, aclMgr, gcmHandler, lfsHandler)
 	if err != nil {
 		log.Fatalf("Failed to initialize git handler: %v", err)
 	}

@@ -13,7 +13,6 @@ import (
 
 	"gitina/internal/auth"
 	"gitina/internal/git"
-	"gitina/internal/git/tiered"
 )
 
 // JSON helper response functions
@@ -199,20 +198,12 @@ func (h *Handler) HandleAPIRepos(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// acquireRepoHelper verifies access and acquires repository from storage if tiered.
+// acquireRepoHelper verifies repository existence on local storage.
 func (h *Handler) acquireRepoHelper(r *http.Request, repoPath string) (func(), error) {
-	if h.tieredMgr != nil {
-		release, err := h.tieredMgr.Acquire(r.Context(), repoPath, false)
-		if err != nil {
-			return nil, err
-		}
-		return release, nil
-	}
-
-	// Local storage fallback: verify bare repo exists
+	// Verify bare repo exists
 	fullRepoPath := path.Join(h.cfg.Server.RepoRoot, repoPath)
 	if _, err := os.Stat(filepath.Join(fullRepoPath, "HEAD")); err != nil {
-		return nil, tiered.ErrRepoNotFound
+		return nil, os.ErrNotExist
 	}
 	return func() {}, nil
 }
@@ -303,7 +294,7 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 	// 2. Check existence / acquire
 	release, err := h.acquireRepoHelper(r, repoPath)
 	if err != nil {
-		if errors.Is(err, tiered.ErrRepoNotFound) {
+		if errors.Is(err, os.ErrNotExist) {
 			writeError(w, http.StatusNotFound, "Repository not found")
 			return
 		}
@@ -576,9 +567,6 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 		}
 
 		_ = h.aclMgr.UpdateVisibilityMetadata(repoPath, vis, collaborators, user)
-		if h.tieredMgr != nil {
-			go h.tieredMgr.Sync(r.Context(), repoPath)
-		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"visibility": vis,
 			"is_public":  vis == "public",
@@ -604,9 +592,6 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 			if collabUser != "" && (collabRole == "ro" || collabRole == "rw") {
 				collaborators[collabUser] = collabRole
 				_ = h.aclMgr.UpdateMetadata(repoPath, isPublic, collaborators, user)
-				if h.tieredMgr != nil {
-					go h.tieredMgr.Sync(r.Context(), repoPath)
-				}
 				writeJSON(w, http.StatusOK, map[string]interface{}{
 					"collaborators": collaborators,
 				})
@@ -626,9 +611,6 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 			if collabUser != "" {
 				delete(collaborators, collabUser)
 				_ = h.aclMgr.UpdateMetadata(repoPath, isPublic, collaborators, user)
-				if h.tieredMgr != nil {
-					go h.tieredMgr.Sync(r.Context(), repoPath)
-				}
 				writeJSON(w, http.StatusOK, map[string]interface{}{
 					"collaborators": collaborators,
 				})

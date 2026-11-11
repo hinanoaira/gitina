@@ -8,7 +8,6 @@ import (
 	"text/tabwriter"
 
 	"gitina/internal/config"
-	"gitina/internal/git/tiered"
 	"gitina/internal/repo"
 )
 
@@ -78,11 +77,7 @@ func loadRepoMgr(configPath string) (*repo.Manager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w (searched path: %s)", err, resolved)
 	}
-	tieredMgr, err := tiered.NewManager(context.Background(), cfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize storage manager: %w", err)
-	}
-	return repo.NewManager(cfg.Server.RepoRoot, tieredMgr), nil
+	return repo.NewManager(cfg.Server.RepoRoot), nil
 }
 
 func handleRepoList(globalConfig string, args []string) {

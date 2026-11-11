@@ -10,7 +10,6 @@ import (
 	"gitina/internal/acl"
 	"gitina/internal/auth"
 	"gitina/internal/config"
-	"gitina/internal/git/tiered"
 	"gitina/internal/repo"
 )
 
@@ -24,12 +23,11 @@ type Handler struct {
 	aclMgr     *acl.Manager
 	tokenMgr   *auth.TokenManager
 	repoMgr    *repo.Manager
-	tieredMgr  *tiered.Manager
 	distSubFS  fs.FS
 	fileServer http.Handler
 }
 
-func NewHandler(cfg *config.Config, aclMgr *acl.Manager, tokenMgr *auth.TokenManager, repoMgr *repo.Manager, tieredMgr *tiered.Manager) (*Handler, error) {
+func NewHandler(cfg *config.Config, aclMgr *acl.Manager, tokenMgr *auth.TokenManager, repoMgr *repo.Manager) (*Handler, error) {
 	subFS, err := fs.Sub(distFS, "dist")
 	if err != nil {
 		return nil, err
@@ -40,7 +38,6 @@ func NewHandler(cfg *config.Config, aclMgr *acl.Manager, tokenMgr *auth.TokenMan
 		aclMgr:     aclMgr,
 		tokenMgr:   tokenMgr,
 		repoMgr:    repoMgr,
-		tieredMgr:  tieredMgr,
 		distSubFS:  subFS,
 		fileServer: http.FileServer(http.FS(subFS)),
 	}, nil

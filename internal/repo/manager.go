@@ -9,8 +9,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"gitina/internal/git/tiered"
 )
 
 type RepoInfo struct {
@@ -18,18 +16,16 @@ type RepoInfo struct {
 	DiskSize  int64
 	UpdatedAt time.Time
 	IsCached  bool
-	Storage   string // "local" or "s3"
+	Storage   string // "local"
 }
 
 type Manager struct {
-	repoRoot  string
-	tieredMgr *tiered.Manager
+	repoRoot string
 }
 
-func NewManager(repoRoot string, tieredMgr *tiered.Manager) *Manager {
+func NewManager(repoRoot string) *Manager {
 	return &Manager{
-		repoRoot:  repoRoot,
-		tieredMgr: tieredMgr,
+		repoRoot: repoRoot,
 	}
 }
 
@@ -38,51 +34,9 @@ func (m *Manager) RepoRoot() string {
 	return m.repoRoot
 }
 
-// List returns a list of all bare repositories hosted under repoRoot or on S3.
+// List returns a list of all bare repositories hosted under repoRoot.
 func (m *Manager) List(ctx context.Context) ([]RepoInfo, error) {
-	if m.tieredMgr != nil && m.tieredMgr.IsTiered() {
-		return m.listTiered(ctx)
-	}
 	return m.listLocal()
-}
-
-func (m *Manager) listTiered(ctx context.Context) ([]RepoInfo, error) {
-	s3Repos, err := m.tieredMgr.S3().ListRepos(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	resMap := make(map[string]RepoInfo)
-	for _, r := range s3Repos {
-		localPath := filepath.Join(m.repoRoot, r.RepoPath, "HEAD")
-		isCached := false
-		if _, statErr := os.Stat(localPath); statErr == nil {
-			isCached = true
-		}
-		resMap[r.RepoPath] = RepoInfo{
-			Path:      r.RepoPath,
-			DiskSize:  r.Size,
-			UpdatedAt: r.UpdatedAt,
-			IsCached:  isCached,
-			Storage:   "s3",
-		}
-	}
-
-	// Also inspect local for any newly created repos not yet synced
-	localRepos, _ := m.listLocal()
-	for _, lr := range localRepos {
-		if _, exists := resMap[lr.Path]; !exists {
-			lr.IsCached = true
-			lr.Storage = "local"
-			resMap[lr.Path] = lr
-		}
-	}
-
-	var list []RepoInfo
-	for _, item := range resMap {
-		list = append(list, item)
-	}
-	return list, nil
 }
 
 func (m *Manager) listLocal() ([]RepoInfo, error) {
@@ -132,7 +86,7 @@ func (m *Manager) listLocal() ([]RepoInfo, error) {
 	return list, err
 }
 
-// Remove deletes or trashes a repository both locally and on S3.
+// Remove deletes or trashes a repository locally.
 func (m *Manager) Remove(ctx context.Context, repoPath string, force bool) (string, error) {
 	repoPath = strings.Trim(filepath.ToSlash(repoPath), "/")
 	if !strings.HasSuffix(repoPath, ".git") {
@@ -140,51 +94,29 @@ func (m *Manager) Remove(ctx context.Context, repoPath string, force bool) (stri
 	}
 
 	target := filepath.Join(m.repoRoot, repoPath)
-	localExists := false
-	if _, err := os.Stat(target); err == nil {
-		localExists = true
-	}
-
-	s3Exists := false
-	if m.tieredMgr != nil && m.tieredMgr.IsTiered() {
-		if ex, err := m.tieredMgr.S3().Exists(ctx, repoPath); err == nil && ex {
-			s3Exists = true
-		}
-	}
-
-	if !localExists && !s3Exists {
+	if _, err := os.Stat(target); err != nil {
 		return "", fmt.Errorf("repository %q does not exist", repoPath)
 	}
 
-	// 1. Remove from S3 if present
-	if s3Exists {
-		if err := m.tieredMgr.S3().DeleteBundle(ctx, repoPath, force); err != nil {
-			return "", fmt.Errorf("failed to delete repository from S3: %w", err)
+	if force {
+		if err := os.RemoveAll(target); err != nil {
+			return "", fmt.Errorf("failed to permanently delete local repository: %w", err)
+		}
+	} else {
+		trashDir := filepath.Join(m.repoRoot, ".trash")
+		if err := os.MkdirAll(trashDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create trash directory: %w", err)
+		}
+		inheritOwnership(m.repoRoot, trashDir)
+
+		sanitizedName := strings.ReplaceAll(repoPath, "/", "_")
+		trashTarget := filepath.Join(trashDir, fmt.Sprintf("%d_%s", time.Now().Unix(), sanitizedName))
+
+		if err := os.Rename(target, trashTarget); err != nil {
+			return "", fmt.Errorf("failed to move local repository to trash: %w", err)
 		}
 	}
-
-	// 2. Remove from local if present
-	if localExists {
-		if force {
-			if err := os.RemoveAll(target); err != nil {
-				return "", fmt.Errorf("failed to permanently delete local repository: %w", err)
-			}
-		} else {
-			trashDir := filepath.Join(m.repoRoot, ".trash")
-			if err := os.MkdirAll(trashDir, 0755); err != nil {
-				return "", fmt.Errorf("failed to create trash directory: %w", err)
-			}
-			inheritOwnership(m.repoRoot, trashDir)
-
-			sanitizedName := strings.ReplaceAll(repoPath, "/", "_")
-			trashTarget := filepath.Join(trashDir, fmt.Sprintf("%d_%s", time.Now().Unix(), sanitizedName))
-
-			if err := os.Rename(target, trashTarget); err != nil {
-				return "", fmt.Errorf("failed to move local repository to trash: %w", err)
-			}
-		}
-		cleanEmptyParents(m.repoRoot, filepath.Dir(target))
-	}
+	cleanEmptyParents(m.repoRoot, filepath.Dir(target))
 
 	if force {
 		return "permanently deleted", nil
