@@ -14,36 +14,36 @@ import (
 )
 
 type BranchInfo struct {
-	Name       string
-	IsDefault  bool
-	CommitHash string
-	CommitMsg  string
-	AuthorDate time.Time
+	Name       string    `json:"name"`
+	IsDefault  bool      `json:"is_default"`
+	CommitHash string    `json:"commit_hash"`
+	CommitMsg  string    `json:"commit_msg"`
+	AuthorDate time.Time `json:"author_date"`
 }
 
 type CommitInfo struct {
-	Hash       string
-	ShortHash  string
-	AuthorName string
-	AuthorDate time.Time
-	Message    string
+	Hash       string    `json:"hash"`
+	ShortHash  string    `json:"short_hash"`
+	AuthorName string    `json:"author_name"`
+	AuthorDate time.Time `json:"author_date"`
+	Message    string    `json:"message"`
 }
 
 type TreeEntry struct {
-	Mode string
-	Type string // "blob" or "tree"
-	Hash string
-	Name string
-	Path string
-	Size int64
+	Mode string `json:"mode"`
+	Type string `json:"type"` // "blob" or "tree"
+	Hash string `json:"hash"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+	Size int64  `json:"size"`
 }
 
 type BlobContent struct {
-	Name     string
-	Path     string
-	Size     int64
-	IsBinary bool
-	Content  string
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	IsBinary bool   `json:"is_binary"`
+	Content  string `json:"content"`
 }
 
 type RepoReader struct {

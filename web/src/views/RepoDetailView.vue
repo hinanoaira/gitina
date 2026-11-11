@@ -203,22 +203,22 @@
           <div v-else class="border border-github-border rounded-md bg-github-dark divide-y divide-github-border/40">
             <div
               v-for="c in commits"
-              :key="c.hash"
+              :key="c.hash || (c as any).Hash"
               class="p-4 hover:bg-github-subtle/40 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-2"
             >
               <div>
                 <div class="text-sm font-semibold text-white leading-snug">
-                  {{ c.message }}
+                  {{ c.message || (c as any).Message }}
                 </div>
                 <div class="text-xs text-github-muted mt-1 flex items-center space-x-2">
-                  <span class="text-github-text font-medium">{{ c.author_name }}</span>
-                  <span>committed on {{ formatDate(c.author_date) }}</span>
+                  <span class="text-github-text font-medium">{{ c.author_name || (c as any).AuthorName }}</span>
+                  <span>committed on {{ formatDate(c.author_date || (c as any).AuthorDate) }}</span>
                 </div>
               </div>
 
               <div class="flex items-center space-x-2 flex-shrink-0">
                 <span class="font-mono text-xs px-2.5 py-1 bg-github-subtle border border-github-border rounded text-github-blue select-all">
-                  {{ c.short_hash }}
+                  {{ c.short_hash || (c as any).ShortHash }}
                 </span>
               </div>
             </div>

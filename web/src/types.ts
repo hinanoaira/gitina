@@ -30,8 +30,10 @@ export interface RepoDetail {
 export interface TreeEntry {
   mode: string
   type: string
-  sha: string
+  hash?: string
+  sha?: string
   name: string
+  path?: string
   size: number
 }
 

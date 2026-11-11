@@ -23,9 +23,9 @@
       </div>
 
       <div v-if="latestCommit" class="hidden md:flex items-center space-x-2 text-xs text-github-muted truncate max-w-sm">
-        <span class="truncate">{{ latestCommit.message }}</span>
+        <span class="truncate">{{ latestCommit.message || (latestCommit as any).Message }}</span>
         <span>•</span>
-        <span class="font-mono text-github-blue">{{ latestCommit.short_hash }}</span>
+        <span class="font-mono text-github-blue">{{ latestCommit.short_hash || (latestCommit as any).ShortHash }}</span>
       </div>
     </div>
 
@@ -43,25 +43,25 @@
 
       <div
         v-for="entry in sortedEntries"
-        :key="entry.name"
+        :key="entry.name || (entry as any).Name"
         @click="onEntryClick(entry)"
         class="px-4 py-2 hover:bg-github-subtle/70 flex items-center justify-between cursor-pointer transition-colors group"
       >
         <div class="flex items-center space-x-2.5 truncate">
-          <Folder v-if="entry.type === 'tree'" class="w-4 h-4 text-github-blue flex-shrink-0" />
-          <FileCode v-else-if="isCodeFile(entry.name)" class="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          <Folder v-if="(entry.type || (entry as any).Type) === 'tree'" class="w-4 h-4 text-github-blue flex-shrink-0" />
+          <FileCode v-else-if="isCodeFile(entry.name || (entry as any).Name)" class="w-4 h-4 text-emerald-400 flex-shrink-0" />
           <FileText v-else class="w-4 h-4 text-github-muted flex-shrink-0" />
 
           <span
             class="truncate group-hover:text-github-blue transition-colors text-xs font-mono"
-            :class="{ 'font-semibold text-white': entry.type === 'tree' }"
+            :class="{ 'font-semibold text-white': (entry.type || (entry as any).Type) === 'tree' }"
           >
-            {{ entry.name }}
+            {{ entry.name || (entry as any).Name }}
           </span>
         </div>
 
         <div class="text-xs text-github-muted font-mono flex-shrink-0 pl-4">
-          <span v-if="entry.type !== 'tree'">{{ formatSize(entry.size) }}</span>
+          <span v-if="(entry.type || (entry as any).Type) !== 'tree'">{{ formatSize(entry.size ?? (entry as any).Size ?? 0) }}</span>
         </div>
       </div>
 
@@ -99,14 +99,24 @@ function getSubPath(idx: number): string {
 }
 
 const sortedEntries = computed(() => {
-  const trees = props.entries.filter(e => e.type === 'tree').sort((a, b) => a.name.localeCompare(b.name))
-  const blobs = props.entries.filter(e => e.type !== 'tree').sort((a, b) => a.name.localeCompare(b.name))
+  const list = props.entries || []
+  const getName = (e: any) => e.name || e.Name || ''
+  const getType = (e: any) => e.type || e.Type || ''
+
+  const trees = list
+    .filter(e => getType(e) === 'tree')
+    .sort((a, b) => getName(a).localeCompare(getName(b)))
+  const blobs = list
+    .filter(e => getType(e) !== 'tree')
+    .sort((a, b) => getName(a).localeCompare(getName(b)))
   return [...trees, ...blobs]
 })
 
-function onEntryClick(entry: TreeEntry) {
-  const fullPath = props.currentPath ? `${props.currentPath}/${entry.name}` : entry.name
-  if (entry.type === 'tree') {
+function onEntryClick(entry: any) {
+  const name = entry.name || entry.Name || ''
+  const type = entry.type || entry.Type || ''
+  const fullPath = props.currentPath ? `${props.currentPath}/${name}` : name
+  if (type === 'tree') {
     router.push({
       path: `/${props.repoPath}`,
       query: { ref: props.refName, tab: 'code', path: fullPath },

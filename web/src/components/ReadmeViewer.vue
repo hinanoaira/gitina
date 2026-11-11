@@ -19,8 +19,9 @@ const props = defineProps<{
 }>()
 
 const renderedHtml = computed(() => {
-  if (!props.content) return ''
-  return marked.parse(props.content, { gfm: true, breaks: true })
+  const c = props.content || (props as any).Content || ''
+  if (!c) return ''
+  return marked.parse(c, { gfm: true, breaks: true })
 })
 </script>
 

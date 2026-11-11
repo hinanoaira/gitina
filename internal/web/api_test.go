@@ -149,7 +149,7 @@ func TestAPIReposAndTree(t *testing.T) {
 		t.Errorf("expected at least 2 entries in tree, got %v", treeResp)
 	}
 	readme, _ := treeResp["readme"].(map[string]interface{})
-	if readme == nil || !strings.Contains(readme["Content"].(string), "Hello API") {
+	if readme == nil || !strings.Contains(readme["content"].(string), "Hello API") {
 		t.Errorf("expected README with Hello API, got %v", readme)
 	}
 
@@ -163,7 +163,7 @@ func TestAPIReposAndTree(t *testing.T) {
 	var blobResp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &blobResp)
 	blob, _ := blobResp["blob"].(map[string]interface{})
-	if blob == nil || !strings.Contains(blob["Content"].(string), "package main") {
+	if blob == nil || !strings.Contains(blob["content"].(string), "package main") {
 		t.Errorf("expected blob with package main, got %v", blobResp)
 	}
 

@@ -22,7 +22,7 @@
     </div>
 
     <!-- Content -->
-    <div v-if="blob.is_binary" class="p-8 text-center text-xs text-github-muted">
+    <div v-if="isBinary" class="p-8 text-center text-xs text-github-muted">
       Binary file cannot be displayed in browser.
     </div>
     <div v-else class="overflow-x-auto text-xs font-mono leading-relaxed bg-github-darker flex">
@@ -31,7 +31,7 @@
         <div v-for="n in lineCount" :key="n">{{ n }}</div>
       </div>
       <!-- Code lines -->
-      <pre class="py-2 px-4 text-github-text overflow-visible flex-grow"><code>{{ blob.content }}</code></pre>
+      <pre class="py-2 px-4 text-github-text overflow-visible flex-grow"><code>{{ rawContent }}</code></pre>
     </div>
   </div>
 </template>
@@ -48,14 +48,22 @@ const props = defineProps<{
 
 const copied = ref(false)
 
+const isBinary = computed(() => {
+  return props.blob?.is_binary ?? (props.blob as any)?.IsBinary ?? false
+})
+
+const rawContent = computed(() => {
+  return props.blob?.content ?? (props.blob as any)?.Content ?? ''
+})
+
 const fileName = computed(() => {
   const parts = props.filePath.split('/')
   return parts[parts.length - 1]
 })
 
 const lineCount = computed(() => {
-  if (!props.blob.content) return 1
-  return props.blob.content.split('\n').length
+  if (!rawContent.value) return 1
+  return rawContent.value.split('\n').length
 })
 
 function formatSize(bytes: number): string {
@@ -67,8 +75,8 @@ function formatSize(bytes: number): string {
 }
 
 async function copyContent() {
-  if (!props.blob.content) return
-  await navigator.clipboard.writeText(props.blob.content)
+  if (!rawContent.value) return
+  await navigator.clipboard.writeText(rawContent.value)
   copied.value = true
   setTimeout(() => {
     copied.value = false
