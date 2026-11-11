@@ -183,9 +183,16 @@ func runServeCmd(globalConfig string, args []string) {
 			isGit = true
 		}
 
-		if isGit || (!strings.Contains(accept, "text/html") && r.Method == http.MethodPost) {
+		if isGit || (!strings.Contains(accept, "text/html") && !strings.HasPrefix(r.URL.Path, "/api/") && r.Method == http.MethodPost) {
 			gitHandler.ServeHTTP(w, r)
 			return
+		}
+
+		// Web API access
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			if webHandler.ServeAPI(w, r) {
+				return
+			}
 		}
 
 		// Web UI access
