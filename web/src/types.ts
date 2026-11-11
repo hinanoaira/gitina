@@ -4,19 +4,49 @@ export interface UserInfo {
   base_url: string
 }
 
+export interface FolderItem {
+  name: string
+  path: string
+  item_count: number
+  visibility: string
+  is_public: boolean
+  collaborators?: Record<string, string>
+}
+
+export interface BreadcrumbItem {
+  name: string
+  path: string
+}
+
 export interface RepoSummary {
+  name?: string
   path: string
   disk_size: number
   updated_at: string
   is_cached: boolean
   storage: string
+  visibility?: string
   is_public: boolean
   can_read: boolean
   can_write: boolean
 }
 
+export interface ReposResponse {
+  current_folder: string
+  breadcrumbs: BreadcrumbItem[]
+  current_folder_meta?: {
+    path: string
+    visibility: string
+    is_public: boolean
+    collaborators?: Record<string, string>
+  } | null
+  folders: FolderItem[]
+  repos: RepoSummary[]
+}
+
 export interface RepoDetail {
   path: string
+  visibility: string
   is_public: boolean
   can_read: boolean
   can_write: boolean

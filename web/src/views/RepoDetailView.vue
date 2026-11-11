@@ -25,10 +25,10 @@
               {{ repoInfo.path }}
             </h1>
             <span
-              class="text-xs px-2 py-0.5 rounded-full border font-medium flex-shrink-0"
-              :class="repoInfo.is_public ? 'bg-emerald-950/40 text-emerald-400 border-emerald-800/60' : 'bg-amber-950/40 text-amber-300 border-amber-800/60'"
+              class="text-xs px-2.5 py-0.5 rounded-full border font-mono font-medium flex-shrink-0"
+              :class="getVisBadgeClass(repoInfo.visibility || (repoInfo.is_public ? 'public' : 'private'))"
             >
-              {{ repoInfo.is_public ? 'Public' : 'Private' }}
+              {{ formatVis(repoInfo.visibility || (repoInfo.is_public ? 'public' : 'private')) }}
             </span>
           </div>
 
@@ -340,16 +340,27 @@
           <div class="border border-github-border rounded-lg bg-github-dark p-6">
             <h3 class="text-sm font-bold text-white mb-2">Repository Visibility</h3>
             <p class="text-xs text-github-muted mb-4">
-              Public repositories are viewable by anyone with read access. Private repositories require explicit collaborator permissions.
+              Choose the visibility level for this repository.
             </p>
-            <div class="flex items-center space-x-4">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <button
-                @click="toggleVisibility"
+                v-for="v in ['public', 'unlisted', 'private']"
+                :key="v"
+                type="button"
+                @click="changeVisibility(v)"
                 :disabled="savingSettings"
-                class="px-4 py-2 border rounded text-xs font-semibold transition-colors"
-                :class="repoInfo.is_public ? 'bg-amber-950/40 text-amber-300 border-amber-800 hover:bg-amber-900/60' : 'bg-emerald-950/40 text-emerald-300 border-emerald-800 hover:bg-emerald-900/60'"
+                class="p-3 border rounded-lg text-left transition-all"
+                :class="(repoInfo.visibility || (repoInfo.is_public ? 'public' : 'private')) === v ? 'bg-github-subtle border-github-blue ring-1 ring-github-blue' : 'bg-github-darker border-github-border hover:border-github-border/80'"
               >
-                Change to {{ repoInfo.is_public ? 'Private' : 'Public' }}
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-bold text-xs capitalize text-white">{{ v }}</span>
+                  <Check v-if="(repoInfo.visibility || (repoInfo.is_public ? 'public' : 'private')) === v" class="w-4 h-4 text-github-blue" />
+                </div>
+                <div class="text-[11px] text-github-muted leading-tight">
+                  <span v-if="v === 'public'">Visible in directory listings and viewable by everyone.</span>
+                  <span v-else-if="v === 'unlisted'">Hidden from listings unless user has access, but viewable by anyone with the direct URL.</span>
+                  <span v-else>Only users with explicit permissions can view.</span>
+                </div>
               </button>
             </div>
           </div>
@@ -645,19 +656,6 @@ function formatDate(iso: string): string {
 }
 
 // Settings handlers
-async function toggleVisibility() {
-  if (!repoInfo.value) return
-  savingSettings.value = true
-  try {
-    const newPub = !repoInfo.value.is_public
-    const res = await api.updateVisibility(repoPath.value, newPub)
-    repoInfo.value.is_public = res.is_public
-  } catch (err: any) {
-    alert(err.message)
-  } finally {
-    savingSettings.value = false
-  }
-}
 
 async function addCollab() {
   if (!repoInfo.value || !newCollabUsername.value) return
@@ -727,6 +725,31 @@ async function revoke(id: string, name: string) {
 async function copyText(text: string) {
   await navigator.clipboard.writeText(text)
   alert('Copied to clipboard: ' + text)
+}
+
+function formatVis(vis?: string): string {
+  if (!vis) return 'Private'
+  return vis.charAt(0).toUpperCase() + vis.slice(1)
+}
+
+function getVisBadgeClass(vis?: string): string {
+  if (vis === 'public') return 'bg-emerald-950/40 text-emerald-400 border-emerald-800/60'
+  if (vis === 'unlisted') return 'bg-blue-950/40 text-blue-300 border-blue-800/60'
+  return 'bg-amber-950/40 text-amber-300 border-amber-800/60'
+}
+
+async function changeVisibility(vis: string) {
+  if (!repoInfo.value) return
+  savingSettings.value = true
+  try {
+    const res = await api.updateRepoVisibility(repoPath.value, vis)
+    repoInfo.value.visibility = res.visibility
+    repoInfo.value.is_public = res.is_public
+  } catch (err: any) {
+    alert(err.message)
+  } finally {
+    savingSettings.value = false
+  }
 }
 
 function isExpired(dateStr?: string | null): boolean {

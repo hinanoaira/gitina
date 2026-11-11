@@ -1,4 +1,4 @@
-import type { UserInfo, RepoSummary, RepoDetail, TreeResponse, BlobResponse, CommitsResponse, TokenResponse, TokenItem } from './types'
+import type { UserInfo, RepoDetail, TreeResponse, BlobResponse, CommitsResponse, TokenResponse, TokenItem, ReposResponse } from './types'
 
 async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(url, {
@@ -28,8 +28,38 @@ export const api = {
     return request<UserInfo>('/api/v1/auth/me')
   },
 
-  getRepos(): Promise<{ repos: RepoSummary[] }> {
-    return request<{ repos: RepoSummary[] }>('/api/v1/repos')
+  getRepos(folder: string = ''): Promise<ReposResponse> {
+    const q = new URLSearchParams()
+    if (folder) q.set('folder', folder)
+    return request<ReposResponse>(`/api/v1/repos?${q.toString()}`)
+  },
+
+  updateRepoVisibility(repoPath: string, visibility: string): Promise<{ visibility: string; is_public: boolean }> {
+    return request<{ visibility: string; is_public: boolean }>(`/api/v1/repos/${repoPath}/settings/visibility`, {
+      method: 'POST',
+      body: JSON.stringify({ visibility }),
+    })
+  },
+
+  updateFolderVisibility(folderPath: string, visibility: string): Promise<{ visibility: string; is_public: boolean }> {
+    return request<{ visibility: string; is_public: boolean }>(`/api/v1/folders/visibility`, {
+      method: 'POST',
+      body: JSON.stringify({ path: folderPath, visibility }),
+    })
+  },
+
+  addFolderCollaborator(folderPath: string, username: string, role: string): Promise<{ collaborators: Record<string, string> }> {
+    return request<{ collaborators: Record<string, string> }>(`/api/v1/folders/collaborators`, {
+      method: 'POST',
+      body: JSON.stringify({ path: folderPath, username, role }),
+    })
+  },
+
+  deleteFolderCollaborator(folderPath: string, username: string): Promise<{ collaborators: Record<string, string> }> {
+    return request<{ collaborators: Record<string, string> }>(`/api/v1/folders/collaborators`, {
+      method: 'DELETE',
+      body: JSON.stringify({ path: folderPath, username }),
+    })
   },
 
   getRepoInfo(repoPath: string): Promise<RepoDetail> {
