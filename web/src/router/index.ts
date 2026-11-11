@@ -24,4 +24,13 @@ const router = createRouter({
   ],
 })
 
+router.afterEach((to) => {
+  if (to.name === 'repo' && to.params.repoPath) {
+    const p = Array.isArray(to.params.repoPath) ? to.params.repoPath.join('/') : to.params.repoPath
+    document.title = `${p} - Gitina`
+  } else {
+    document.title = 'Gitina'
+  }
+})
+
 export default router
