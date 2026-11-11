@@ -10,12 +10,11 @@ import (
 )
 
 type Config struct {
-	Server            ServerConfig            `yaml:"server"`
-	RepositoryStorage RepositoryStorageConfig `yaml:"repository_storage"`
-	LFS               LFSConfig               `yaml:"lfs"`
-	GitHub            GitHubConfig            `yaml:"github"`
-	Admins            []string                `yaml:"admins"`
-	Repositories      []RepositoryConfig      `yaml:"repositories"`
+	Server       ServerConfig       `yaml:"server"`
+	LFS          LFSConfig          `yaml:"lfs"`
+	GitHub       GitHubConfig       `yaml:"github"`
+	Admins       []string           `yaml:"admins"`
+	Repositories []RepositoryConfig `yaml:"repositories"`
 }
 
 type ServerConfig struct {
@@ -25,38 +24,18 @@ type ServerConfig struct {
 	JWTSecret string `yaml:"jwt_secret"` // secret key for JWT signing
 }
 
-type RepositoryStorageConfig struct {
-	Type  string                 `yaml:"type"` // "local" or "s3"
-	S3    RepositoryStorageS3    `yaml:"s3"`
-	Cache RepositoryStorageCache `yaml:"cache"`
-}
-
-type RepositoryStorageS3 struct {
-	Endpoint        string `yaml:"endpoint"` // e.g. Cloudflare R2 or MinIO URL
-	Region          string `yaml:"region"`
-	Bucket          string `yaml:"bucket"`
-	Prefix          string `yaml:"prefix"` // default: "repos/"
-	AccessKeyID     string `yaml:"access_key_id"`
-	SecretAccessKey string `yaml:"secret_access_key"`
-	UsePathStyle    bool   `yaml:"use_path_style"`
-}
-
-type RepositoryStorageCache struct {
-	MaxSizeGB int `yaml:"max_size_gb"` // default: 15
-}
-
 type LFSConfig struct {
-	Storage string            `yaml:"storage"` // "local" or "s3"
-	Local   LFSLocalConfig    `yaml:"local"`
-	S3      LFSS3Config       `yaml:"s3"`
-	GC      LFSGCConfig       `yaml:"gc"`
+	Storage string         `yaml:"storage"` // "local" or "s3"
+	Local   LFSLocalConfig `yaml:"local"`
+	S3      LFSS3Config    `yaml:"s3"`
+	GC      LFSGCConfig    `yaml:"gc"`
 }
 
 type LFSGCConfig struct {
-	Enabled         bool `yaml:"enabled"`            // whether automatic LFS GC is enabled
-	IntervalHours   int  `yaml:"interval_hours"`     // execution interval in hours (default: 24)
-	GracePeriodDays int  `yaml:"grace_period_days"`  // minimum age in days before an orphan is deleted (default: 7)
-	DryRun          bool `yaml:"dry_run"`            // if true, logs actions without deleting
+	Enabled         bool `yaml:"enabled"`           // whether automatic LFS GC is enabled
+	IntervalHours   int  `yaml:"interval_hours"`    // execution interval in hours (default: 24)
+	GracePeriodDays int  `yaml:"grace_period_days"` // minimum age in days before an orphan is deleted (default: 7)
+	DryRun          bool `yaml:"dry_run"`           // if true, logs actions without deleting
 }
 
 type LFSLocalConfig struct {
@@ -64,7 +43,7 @@ type LFSLocalConfig struct {
 }
 
 type LFSS3Config struct {
-	Endpoint        string `yaml:"endpoint"`          // optional for S3 compatible (e.g. Cloudflare R2, MinIO)
+	Endpoint        string `yaml:"endpoint"` // optional for S3 compatible (e.g. Cloudflare R2, MinIO)
 	Region          string `yaml:"region"`
 	Bucket          string `yaml:"bucket"`
 	AccessKeyID     string `yaml:"access_key_id"`
@@ -111,19 +90,6 @@ func Load(path string) (*Config, error) {
 	}
 	cfg.Server.BaseURL = strings.TrimRight(cfg.Server.BaseURL, "/")
 
-	if cfg.RepositoryStorage.Type == "" {
-		cfg.RepositoryStorage.Type = "local"
-	}
-	if cfg.RepositoryStorage.S3.Prefix == "" {
-		cfg.RepositoryStorage.S3.Prefix = "repos/"
-	}
-	if !strings.HasSuffix(cfg.RepositoryStorage.S3.Prefix, "/") {
-		cfg.RepositoryStorage.S3.Prefix += "/"
-	}
-	if cfg.RepositoryStorage.Cache.MaxSizeGB <= 0 {
-		cfg.RepositoryStorage.Cache.MaxSizeGB = 15
-	}
-
 	if cfg.LFS.Storage == "" {
 		cfg.LFS.Storage = "local"
 	}
@@ -143,24 +109,17 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// resolveConfigPath resolves relative paths against:
-// 1. Current working directory (if exists)
-// 2. Config file directory (if exists)
-// 3. /var/lib/gitina (standard service working directory, if exists)
-// 4. Fallback: absolute path based on cwd
 func resolveConfigPath(configFilePath, targetPath string) string {
 	if filepath.IsAbs(targetPath) {
 		return filepath.Clean(targetPath)
 	}
 
-	// 1. Check current working directory
 	if cwdAbs, err := filepath.Abs(targetPath); err == nil {
 		if _, err := os.Stat(cwdAbs); err == nil {
 			return cwdAbs
 		}
 	}
 
-	// 2. Check relative to config file location
 	if configFilePath != "" {
 		cfgDir := filepath.Dir(configFilePath)
 		joined := filepath.Join(cfgDir, targetPath)
@@ -172,13 +131,11 @@ func resolveConfigPath(configFilePath, targetPath string) string {
 		}
 	}
 
-	// 3. Check /var/lib/gitina
 	varLibCandidate := filepath.Join("/var/lib/gitina", targetPath)
 	if _, err := os.Stat(varLibCandidate); err == nil {
 		return varLibCandidate
 	}
 
-	// Default fallback to cwd absolute
 	cwdAbs, err := filepath.Abs(targetPath)
 	if err == nil {
 		return cwdAbs
