@@ -49,6 +49,14 @@ type LFSConfig struct {
 	Storage string            `yaml:"storage"` // "local" or "s3"
 	Local   LFSLocalConfig    `yaml:"local"`
 	S3      LFSS3Config       `yaml:"s3"`
+	GC      LFSGCConfig       `yaml:"gc"`
+}
+
+type LFSGCConfig struct {
+	Enabled         bool `yaml:"enabled"`            // whether automatic LFS GC is enabled
+	IntervalHours   int  `yaml:"interval_hours"`     // execution interval in hours (default: 24)
+	GracePeriodDays int  `yaml:"grace_period_days"`  // minimum age in days before an orphan is deleted (default: 7)
+	DryRun          bool `yaml:"dry_run"`            // if true, logs actions without deleting
 }
 
 type LFSLocalConfig struct {
@@ -124,6 +132,12 @@ func Load(path string) (*Config, error) {
 			cfg.LFS.Local.Path = "./data/lfs"
 		}
 		cfg.LFS.Local.Path = resolveConfigPath(path, cfg.LFS.Local.Path)
+	}
+	if cfg.LFS.GC.IntervalHours <= 0 {
+		cfg.LFS.GC.IntervalHours = 24
+	}
+	if cfg.LFS.GC.GracePeriodDays <= 0 {
+		cfg.LFS.GC.GracePeriodDays = 7
 	}
 
 	return &cfg, nil
