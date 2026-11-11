@@ -68,11 +68,21 @@ func SaveMetadata(repoDir string, meta *RepoMetadata) error {
 		return err
 	}
 
-	tmpFile := filepath.Join(repoDir, MetadataFileName+".tmp")
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+	f, err := os.CreateTemp(repoDir, MetadataFileName+".tmp.*")
+	if err != nil {
+		return err
+	}
+	tmpName := f.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 
 	targetFile := filepath.Join(repoDir, MetadataFileName)
-	return os.Rename(tmpFile, targetFile)
+	return os.Rename(tmpName, targetFile)
 }

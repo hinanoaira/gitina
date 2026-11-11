@@ -63,25 +63,7 @@ func (m *Manager) GetEffectiveVisibility(targetPath string) (visibility string, 
 	collaborators = make(map[string]string)
 	visibility = "private"
 
-	// 1. Inherit from parent directory metadata progressively from top to bottom
-	if m.repoRoot != "" {
-		parts := strings.Split(cleanPath, "/")
-		current := ""
-		for i := 0; i < len(parts)-1; i++ {
-			current = path.Join(current, parts[i])
-			dir := filepath.Join(m.repoRoot, current)
-			if meta, err := LoadMetadata(dir); err == nil && meta != nil {
-				if meta.EffectiveVisibility() != "" {
-					visibility = meta.EffectiveVisibility()
-				}
-				for u, lvl := range meta.Collaborators {
-					collaborators[strings.ToLower(strings.TrimSpace(u))] = lvl
-				}
-			}
-		}
-	}
-
-	// 2. Defaults from config.yaml matching rules
+	// 1. Defaults from config.yaml matching rules (Base defaults)
 	if isRepo {
 		normRepo := normalizeRepoPath(cleanPath)
 		var matchedRule *config.RepositoryConfig
@@ -104,7 +86,25 @@ func (m *Manager) GetEffectiveVisibility(targetPath string) (visibility string, 
 		}
 	}
 
-	// 3. Override from dynamic gitina-meta.json of the target itself if present
+	// 2. Inherit from parent directory metadata progressively from top to bottom (Overrides config.yaml)
+	if m.repoRoot != "" {
+		parts := strings.Split(cleanPath, "/")
+		current := ""
+		for i := 0; i < len(parts)-1; i++ {
+			current = path.Join(current, parts[i])
+			dir := filepath.Join(m.repoRoot, current)
+			if meta, err := LoadMetadata(dir); err == nil && meta != nil {
+				if meta.EffectiveVisibility() != "" {
+					visibility = meta.EffectiveVisibility()
+				}
+				for u, lvl := range meta.Collaborators {
+					collaborators[strings.ToLower(strings.TrimSpace(u))] = lvl
+				}
+			}
+		}
+	}
+
+	// 3. Override from dynamic gitina-meta.json of the target itself if present (Highest priority)
 	if m.repoRoot != "" {
 		dir := filepath.Join(m.repoRoot, cleanPath)
 		if meta, err := LoadMetadata(dir); err == nil && meta != nil {

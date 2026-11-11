@@ -591,7 +591,7 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 			collabRole := strings.TrimSpace(req.Role)
 			if collabUser != "" && (collabRole == "ro" || collabRole == "rw") {
 				collaborators[collabUser] = collabRole
-				_ = h.aclMgr.UpdateMetadata(repoPath, isPublic, collaborators, user)
+				_ = h.aclMgr.UpdateVisibilityMetadata(repoPath, vis, collaborators, user)
 				writeJSON(w, http.StatusOK, map[string]interface{}{
 					"collaborators": collaborators,
 				})
@@ -610,7 +610,7 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 			collabUser := strings.TrimSpace(req.Username)
 			if collabUser != "" {
 				delete(collaborators, collabUser)
-				_ = h.aclMgr.UpdateMetadata(repoPath, isPublic, collaborators, user)
+				_ = h.aclMgr.UpdateVisibilityMetadata(repoPath, vis, collaborators, user)
 				writeJSON(w, http.StatusOK, map[string]interface{}{
 					"collaborators": collaborators,
 				})
