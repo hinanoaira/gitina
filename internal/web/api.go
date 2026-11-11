@@ -43,7 +43,8 @@ func (h *Handler) HandleAuthMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleAPIRepos returns the list of repositories accessible to the current user.
+// HandleAPIRepos returns the hierarchical list of folders and repositories.
+// Query param: folder (optional, relative path)
 func (h *Handler) HandleAPIRepos(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -52,44 +53,149 @@ func (h *Handler) HandleAPIRepos(w http.ResponseWriter, r *http.Request) {
 
 	user := h.CurrentUser(r)
 	isAdmin := h.aclMgr.IsAdmin(user)
+	currentFolder := strings.Trim(filepath.ToSlash(r.URL.Query().Get("folder")), "/")
 
 	allRepos, err := h.repoMgr.List(r.Context())
 	if err != nil {
 		allRepos = nil
 	}
 
-	type repoItem struct {
-		Path      string    `json:"path"`
-		DiskSize  int64     `json:"disk_size"`
-		UpdatedAt time.Time `json:"updated_at"`
-		IsCached  bool      `json:"is_cached"`
-		Storage   string    `json:"storage"`
-		IsPublic  bool      `json:"is_public"`
-		CanRead   bool      `json:"can_read"`
-		CanWrite  bool      `json:"can_write"`
+	type folderItem struct {
+		Name          string            `json:"name"`
+		Path          string            `json:"path"`
+		ItemCount     int               `json:"item_count"`
+		Visibility    string            `json:"visibility"`
+		IsPublic      bool              `json:"is_public"`
+		Collaborators map[string]string `json:"collaborators,omitempty"`
 	}
 
-	var visibleRepos []repoItem
-	for _, rp := range allRepos {
-		canRead := h.aclMgr.CanRead(user, rp.Path)
-		if canRead || isAdmin {
-			isPublic, _ := h.aclMgr.GetEffectiveConfig(rp.Path)
-			canWrite := h.aclMgr.CanWrite(user, rp.Path)
-			visibleRepos = append(visibleRepos, repoItem{
-				Path:      rp.Path,
-				DiskSize:  rp.DiskSize,
-				UpdatedAt: rp.UpdatedAt,
-				IsCached:  rp.IsCached,
-				Storage:   rp.Storage,
-				IsPublic:  isPublic,
-				CanRead:   canRead,
-				CanWrite:  canWrite,
+	type repoItem struct {
+		Name       string    `json:"name"`
+		Path       string    `json:"path"`
+		DiskSize   int64     `json:"disk_size"`
+		UpdatedAt  time.Time `json:"updated_at"`
+		IsCached   bool      `json:"is_cached"`
+		Storage    string    `json:"storage"`
+		Visibility string    `json:"visibility"`
+		IsPublic   bool      `json:"is_public"`
+		CanRead    bool      `json:"can_read"`
+		CanWrite   bool      `json:"can_write"`
+	}
+
+	type breadcrumbItem struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+
+	var breadcrumbs []breadcrumbItem
+	if currentFolder != "" {
+		parts := strings.Split(currentFolder, "/")
+		acc := ""
+		for _, p := range parts {
+			if acc == "" {
+				acc = p
+			} else {
+				acc = acc + "/" + p
+			}
+			breadcrumbs = append(breadcrumbs, breadcrumbItem{
+				Name: p,
+				Path: acc,
 			})
 		}
 	}
 
+	subFolderMap := make(map[string]int) // subfolder relative name -> count of visible repos inside
+	var visibleRepos []repoItem
+
+	prefix := ""
+	if currentFolder != "" {
+		prefix = currentFolder + "/"
+	}
+
+	for _, rp := range allRepos {
+		normPath := filepath.ToSlash(rp.Path)
+
+		// Check if inside currentFolder
+		if prefix != "" && !strings.HasPrefix(normPath, prefix) {
+			continue
+		}
+
+		rel := strings.TrimPrefix(normPath, prefix)
+		parts := strings.Split(rel, "/")
+
+		if len(parts) == 1 {
+			// Direct child repository
+			canList := h.aclMgr.CanList(user, rp.Path)
+			if canList || isAdmin {
+				vis, isPub, _ := h.aclMgr.GetEffectiveVisibility(rp.Path)
+				canRead := h.aclMgr.CanRead(user, rp.Path)
+				canWrite := h.aclMgr.CanWrite(user, rp.Path)
+				visibleRepos = append(visibleRepos, repoItem{
+					Name:       parts[0],
+					Path:       rp.Path,
+					DiskSize:   rp.DiskSize,
+					UpdatedAt:  rp.UpdatedAt,
+					IsCached:   rp.IsCached,
+					Storage:    rp.Storage,
+					Visibility: vis,
+					IsPublic:   isPub,
+					CanRead:    canRead,
+					CanWrite:   canWrite,
+				})
+			}
+		} else {
+			// In a nested subfolder under currentFolder
+			subDirName := parts[0]
+			fullSubDir := subDirName
+			if currentFolder != "" {
+				fullSubDir = currentFolder + "/" + subDirName
+			}
+
+			// Check if repository or folder can be listed
+			if h.aclMgr.CanList(user, rp.Path) || h.aclMgr.CanList(user, fullSubDir) || isAdmin {
+				subFolderMap[subDirName]++
+			}
+		}
+	}
+
+	var visibleFolders []folderItem
+	for subName, count := range subFolderMap {
+		fullSub := subName
+		if currentFolder != "" {
+			fullSub = currentFolder + "/" + subName
+		}
+		vis, isPub, collabs := h.aclMgr.GetEffectiveVisibility(fullSub)
+		fItem := folderItem{
+			Name:       subName,
+			Path:       fullSub,
+			ItemCount:  count,
+			Visibility: vis,
+			IsPublic:   isPub,
+		}
+		if isAdmin {
+			fItem.Collaborators = collabs
+		}
+		visibleFolders = append(visibleFolders, fItem)
+	}
+
+	// Also get current folder metadata if inside a folder
+	var currentFolderMeta map[string]interface{}
+	if currentFolder != "" {
+		vis, isPub, collabs := h.aclMgr.GetEffectiveVisibility(currentFolder)
+		currentFolderMeta = map[string]interface{}{
+			"path":          currentFolder,
+			"visibility":    vis,
+			"is_public":     isPub,
+			"collaborators": collabs,
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"repos": visibleRepos,
+		"current_folder":      currentFolder,
+		"breadcrumbs":         breadcrumbs,
+		"current_folder_meta": currentFolderMeta,
+		"folders":             visibleFolders,
+		"repos":               visibleRepos,
 	})
 }
 
@@ -122,6 +228,11 @@ func (h *Handler) ServeAPI(w http.ResponseWriter, r *http.Request) bool {
 
 	if p == "/api/v1/repos" || p == "/api/v1/repos/" {
 		h.HandleAPIRepos(w, r)
+		return true
+	}
+
+	if strings.HasPrefix(p, "/api/v1/folders/") || p == "/api/v1/folders" {
+		h.HandleAPIFolders(w, r)
 		return true
 	}
 
@@ -178,7 +289,7 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 	canRead := h.aclMgr.CanRead(user, repoPath)
 	canWrite := h.aclMgr.CanWrite(user, repoPath)
 	isAdmin := h.aclMgr.IsAdmin(user)
-	isPublic, collaborators := h.aclMgr.GetEffectiveConfig(repoPath)
+	vis, isPublic, collaborators := h.aclMgr.GetEffectiveVisibility(repoPath)
 
 	if !canRead {
 		if user == "" {
@@ -242,6 +353,7 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 
 		resp := map[string]interface{}{
 			"path":           repoPath,
+			"visibility":     vis,
 			"is_public":      isPublic,
 			"can_read":       canRead,
 			"can_write":      canWrite,
@@ -443,19 +555,33 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 			return
 		}
 		var req struct {
-			IsPublic bool `json:"is_public"`
+			IsPublic   *bool  `json:"is_public"`
+			Visibility string `json:"visibility"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "Invalid JSON payload")
 			return
 		}
 
-		_ = h.aclMgr.UpdateMetadata(repoPath, req.IsPublic, collaborators, user)
+		vis := req.Visibility
+		if vis == "" && req.IsPublic != nil {
+			if *req.IsPublic {
+				vis = "public"
+			} else {
+				vis = "private"
+			}
+		}
+		if vis != "public" && vis != "unlisted" && vis != "private" {
+			vis = "private"
+		}
+
+		_ = h.aclMgr.UpdateVisibilityMetadata(repoPath, vis, collaborators, user)
 		if h.tieredMgr != nil {
 			go h.tieredMgr.Sync(r.Context(), repoPath)
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"is_public": req.IsPublic,
+			"visibility": vis,
+			"is_public":  vis == "public",
 		})
 
 	case "settings/collaborators":
@@ -516,5 +642,108 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 
 	default:
 		writeError(w, http.StatusNotFound, "Unknown API sub-action")
+	}
+}
+
+// HandleAPIFolders handles metadata configuration for folders.
+// Endpoints:
+// - POST /api/v1/folders/visibility: { "path": "path/to/folder", "visibility": "public"|"unlisted"|"private" }
+// - POST /api/v1/folders/collaborators: { "path": "path/to/folder", "username": "alice", "role": "ro"|"rw" }
+// - DELETE /api/v1/folders/collaborators: { "path": "path/to/folder", "username": "alice" }
+func (h *Handler) HandleAPIFolders(w http.ResponseWriter, r *http.Request) {
+	user := h.CurrentUser(r)
+	if !h.aclMgr.IsAdmin(user) {
+		writeError(w, http.StatusForbidden, "Admin permission required")
+		return
+	}
+
+	p := strings.TrimPrefix(r.URL.Path, "/api/v1/folders")
+	p = strings.Trim(p, "/")
+
+	switch p {
+	case "visibility":
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		var req struct {
+			Path       string `json:"path"`
+			Visibility string `json:"visibility"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid JSON payload")
+			return
+		}
+		cleanPath := strings.Trim(filepath.ToSlash(req.Path), "/")
+		if cleanPath == "" {
+			writeError(w, http.StatusBadRequest, "Missing folder path")
+			return
+		}
+		vis := req.Visibility
+		if vis != "public" && vis != "unlisted" && vis != "private" {
+			vis = "private"
+		}
+		_, _, collabs := h.aclMgr.GetEffectiveVisibility(cleanPath)
+		if err := h.aclMgr.UpdateVisibilityMetadata(cleanPath, vis, collabs, user); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"path":       cleanPath,
+			"visibility": vis,
+			"is_public":  vis == "public",
+		})
+
+	case "collaborators":
+		var req struct {
+			Path     string `json:"path"`
+			Username string `json:"username"`
+			Role     string `json:"role"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid JSON payload")
+			return
+		}
+		cleanPath := strings.Trim(filepath.ToSlash(req.Path), "/")
+		collabUser := strings.TrimSpace(req.Username)
+		if cleanPath == "" || collabUser == "" {
+			writeError(w, http.StatusBadRequest, "Missing path or username")
+			return
+		}
+
+		vis, _, collabs := h.aclMgr.GetEffectiveVisibility(cleanPath)
+
+		switch r.Method {
+		case http.MethodPost:
+			collabRole := strings.TrimSpace(req.Role)
+			if collabRole != "ro" && collabRole != "rw" {
+				writeError(w, http.StatusBadRequest, "Role must be ro or rw")
+				return
+			}
+			collabs[collabUser] = collabRole
+			if err := h.aclMgr.UpdateVisibilityMetadata(cleanPath, vis, collabs, user); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"collaborators": collabs,
+			})
+
+		case http.MethodDelete:
+			delete(collabs, collabUser)
+			if err := h.aclMgr.UpdateVisibilityMetadata(cleanPath, vis, collabs, user); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"collaborators": collabs,
+			})
+
+		default:
+			writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		}
+
+	default:
+		writeError(w, http.StatusNotFound, "Unknown folder action")
 	}
 }

@@ -12,9 +12,24 @@ const MetadataFileName = "gitina-meta.json"
 
 type RepoMetadata struct {
 	Public        bool              `json:"public"`
-	Collaborators map[string]string `json:"collaborators"` // username -> "ro" | "rw"
+	Visibility    string            `json:"visibility,omitempty"` // "public", "unlisted", "private"
+	Collaborators map[string]string `json:"collaborators"`        // username -> "ro" | "rw"
 	UpdatedAt     time.Time         `json:"updated_at"`
 	UpdatedBy     string            `json:"updated_by"`
+}
+
+// EffectiveVisibility resolves the normalized visibility: "public", "unlisted", or "private".
+func (m *RepoMetadata) EffectiveVisibility() string {
+	if m == nil {
+		return "private"
+	}
+	if m.Visibility != "" {
+		return m.Visibility
+	}
+	if m.Public {
+		return "public"
+	}
+	return "private"
 }
 
 // LoadMetadata reads gitina-meta.json from repoDir. Returns nil, nil if the file does not exist.
@@ -40,6 +55,9 @@ func LoadMetadata(repoDir string) (*RepoMetadata, error) {
 
 // SaveMetadata writes gitina-meta.json atomically to repoDir.
 func SaveMetadata(repoDir string, meta *RepoMetadata) error {
+	if err := os.MkdirAll(repoDir, 0755); err != nil {
+		return err
+	}
 	if meta.Collaborators == nil {
 		meta.Collaborators = make(map[string]string)
 	}

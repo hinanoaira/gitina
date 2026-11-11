@@ -118,10 +118,11 @@ func TestAPIReposAndTree(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
-	var reposResp map[string][]map[string]interface{}
+	var reposResp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &reposResp)
-	if len(reposResp["repos"]) == 0 {
-		t.Errorf("expected at least 1 repo")
+	reposList, ok := reposResp["repos"].([]interface{})
+	if !ok || len(reposList) == 0 {
+		t.Errorf("expected at least 1 repo in list, got %v", reposResp)
 	}
 
 	// 3. Test /api/v1/repos/test-api.git info
@@ -239,8 +240,8 @@ func TestAPIReposAndTree(t *testing.T) {
 		t.Errorf("expected 0 tokens after revocation, got %v", listResp)
 	}
 
-	// 8. Test /api/v1/repos/test-api.git/settings/visibility (Admin)
-	visPayload := `{"is_public": false}`
+	// 8. Test /api/v1/repos/test-api.git/settings/visibility (Admin: set unlisted)
+	visPayload := `{"visibility": "unlisted"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/repos/test-api.git/settings/visibility", strings.NewReader(visPayload))
 	req.AddCookie(sessionCookie)
 	w = httptest.NewRecorder()
@@ -250,7 +251,17 @@ func TestAPIReposAndTree(t *testing.T) {
 	}
 	var visResp map[string]interface{}
 	_ = json.Unmarshal(w.Body.Bytes(), &visResp)
-	if visResp["is_public"] != false {
-		t.Errorf("expected is_public to be false, got %v", visResp)
+	if visResp["visibility"] != "unlisted" {
+		t.Errorf("expected visibility to be unlisted, got %v", visResp)
+	}
+
+	// 9. Test /api/v1/folders/visibility (Admin: set folder visibility)
+	folderVisPayload := `{"path": "sample-folder", "visibility": "public"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/folders/visibility", strings.NewReader(folderVisPayload))
+	req.AddCookie(sessionCookie)
+	w = httptest.NewRecorder()
+	handler.ServeAPI(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }

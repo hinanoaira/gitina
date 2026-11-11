@@ -78,4 +78,53 @@ func TestDynamicMetadataOverride(t *testing.T) {
 	if !mgr.CanRead("bob", "owner/project.git") || mgr.CanWrite("bob", "owner/project.git") {
 		t.Fatal("expected bob to have read-only access now")
 	}
+
+	// 3. Test "unlisted" visibility:
+	// URL direct access (CanRead) is allowed for everyone (including anonymous),
+	// but CanList is only allowed for users with explicit access (bob) or admin.
+	err = mgr.UpdateVisibilityMetadata("owner/project.git", "unlisted", map[string]string{
+		"bob": "ro",
+	}, "admin_user")
+	if err != nil {
+		t.Fatalf("UpdateVisibilityMetadata failed: %v", err)
+	}
+
+	// Direct access test:
+	if !mgr.CanRead("", "owner/project.git") {
+		t.Fatal("unlisted should be readable by anonymous via direct URL")
+	}
+	if !mgr.CanRead("random_user", "owner/project.git") {
+		t.Fatal("unlisted should be readable by any user via direct URL")
+	}
+	if mgr.CanWrite("", "owner/project.git") || mgr.CanWrite("random_user", "owner/project.git") {
+		t.Fatal("unlisted should NOT be writable without explicit permission")
+	}
+
+	// List test:
+	if mgr.CanList("", "owner/project.git") {
+		t.Fatal("unlisted should NOT appear in listing for anonymous")
+	}
+	if mgr.CanList("random_user", "owner/project.git") {
+		t.Fatal("unlisted should NOT appear in listing for users without permission")
+	}
+	if !mgr.CanList("bob", "owner/project.git") {
+		t.Fatal("unlisted should appear in listing for users with RO access")
+	}
+	if !mgr.CanList("admin_user", "owner/project.git") {
+		t.Fatal("unlisted should appear in listing for admin")
+	}
+
+	// 4. Test Parent Folder Permission Inheritance:
+	// Set permissions on "owner" folder: charlie -> rw
+	err = mgr.UpdateVisibilityMetadata("owner", "private", map[string]string{
+		"charlie": "rw",
+	}, "admin_user")
+	if err != nil {
+		t.Fatalf("UpdateVisibilityMetadata on folder failed: %v", err)
+	}
+
+	// charlie should inherit write access to owner/project.git
+	if !mgr.CanWrite("charlie", "owner/project.git") {
+		t.Fatal("charlie should inherit write access from parent folder 'owner'")
+	}
 }
