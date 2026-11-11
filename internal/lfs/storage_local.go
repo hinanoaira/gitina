@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,19 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+func isValidOID(oid string) bool {
+	if len(oid) != 64 {
+		return false
+	}
+	for i := 0; i < len(oid); i++ {
+		c := oid[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
 
 type LocalStorage struct {
 	baseDir string
@@ -32,6 +46,9 @@ func (s *LocalStorage) objectPath(oid string) string {
 }
 
 func (s *LocalStorage) Exists(ctx context.Context, repoPath, oid string, size int64) (bool, error) {
+	if !isValidOID(oid) {
+		return false, errors.New("invalid lfs oid")
+	}
 	path := s.objectPath(oid)
 	info, err := os.Stat(path)
 	if err != nil {
@@ -47,6 +64,9 @@ func (s *LocalStorage) Exists(ctx context.Context, repoPath, oid string, size in
 }
 
 func (s *LocalStorage) GetUploadAction(ctx context.Context, baseURL, repoPath, oid string, size int64) (*ActionLink, *ActionLink, error) {
+	if !isValidOID(oid) {
+		return nil, nil, errors.New("invalid lfs oid")
+	}
 	uploadHref := fmt.Sprintf("%s/%s/info/lfs/objects/%s", baseURL, repoPath, oid)
 	verifyHref := fmt.Sprintf("%s/%s/info/lfs/objects/verify", baseURL, repoPath)
 
@@ -62,6 +82,9 @@ func (s *LocalStorage) GetUploadAction(ctx context.Context, baseURL, repoPath, o
 }
 
 func (s *LocalStorage) GetDownloadAction(ctx context.Context, baseURL, repoPath, oid string, size int64) (*ActionLink, error) {
+	if !isValidOID(oid) {
+		return nil, errors.New("invalid lfs oid")
+	}
 	downloadHref := fmt.Sprintf("%s/%s/info/lfs/objects/%s", baseURL, repoPath, oid)
 	return &ActionLink{
 		Href:      downloadHref,
@@ -70,6 +93,9 @@ func (s *LocalStorage) GetDownloadAction(ctx context.Context, baseURL, repoPath,
 }
 
 func (s *LocalStorage) VerifyObject(ctx context.Context, repoPath, oid string, size int64) error {
+	if !isValidOID(oid) {
+		return errors.New("invalid lfs oid")
+	}
 	path := s.objectPath(oid)
 	info, err := os.Stat(path)
 	if err != nil {
@@ -82,6 +108,10 @@ func (s *LocalStorage) VerifyObject(ctx context.Context, repoPath, oid string, s
 }
 
 func (s *LocalStorage) ServeObject(w http.ResponseWriter, r *http.Request, repoPath, oid string) {
+	if !isValidOID(oid) {
+		http.Error(w, "invalid lfs oid", http.StatusBadRequest)
+		return
+	}
 	path := s.objectPath(oid)
 	file, err := os.Open(path)
 	if err != nil {
@@ -106,6 +136,10 @@ func (s *LocalStorage) ServeObject(w http.ResponseWriter, r *http.Request, repoP
 }
 
 func (s *LocalStorage) PutObject(w http.ResponseWriter, r *http.Request, repoPath, oid string) {
+	if !isValidOID(oid) {
+		http.Error(w, "invalid lfs oid", http.StatusBadRequest)
+		return
+	}
 	destPath := s.objectPath(oid)
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		http.Error(w, "failed to create directory", http.StatusInternalServerError)
@@ -204,6 +238,9 @@ func (s *LocalStorage) DeleteObjects(ctx context.Context, oids []string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+		}
+		if !isValidOID(oid) {
+			return fmt.Errorf("invalid lfs oid: %s", oid)
 		}
 		path := s.objectPath(oid)
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {

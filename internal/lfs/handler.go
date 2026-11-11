@@ -28,17 +28,18 @@ func NewHandler(cfg *config.Config, storage StorageBackend, aclMgr *acl.Manager,
 
 // HandleBatch handles POST /<repo>/info/lfs/objects/batch
 func (h *Handler) HandleBatch(w http.ResponseWriter, r *http.Request, repoPath string) {
-	username := h.gcmHandler.ExtractUsername(r)
-
 	var req BatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json request body", http.StatusBadRequest)
 		return
 	}
 
+	isWrite := (req.Operation == "upload")
+	username, tokenAllowed := h.gcmHandler.AuthenticateRequest(r, repoPath, isWrite)
+
 	// ACL check
-	if req.Operation == "upload" {
-		if !h.aclMgr.CanWrite(username, repoPath) {
+	if isWrite {
+		if !tokenAllowed || !h.aclMgr.CanWrite(username, repoPath) {
 			if username == "" {
 				w.Header().Set("WWW-Authenticate", `Basic realm="Gitea"`)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -48,7 +49,7 @@ func (h *Handler) HandleBatch(w http.ResponseWriter, r *http.Request, repoPath s
 			return
 		}
 	} else { // download
-		if !h.aclMgr.CanRead(username, repoPath) {
+		if !h.aclMgr.CanRead(username, repoPath) || (username != "" && !tokenAllowed) {
 			if username == "" {
 				w.Header().Set("WWW-Authenticate", `Basic realm="Gitea"`)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -129,8 +130,8 @@ func (h *Handler) HandleBatch(w http.ResponseWriter, r *http.Request, repoPath s
 
 // HandleVerify handles POST /<repo>/info/lfs/objects/verify
 func (h *Handler) HandleVerify(w http.ResponseWriter, r *http.Request, repoPath string) {
-	username := h.gcmHandler.ExtractUsername(r)
-	if !h.aclMgr.CanWrite(username, repoPath) {
+	username, tokenAllowed := h.gcmHandler.AuthenticateRequest(r, repoPath, true)
+	if !tokenAllowed || !h.aclMgr.CanWrite(username, repoPath) {
 		if username == "" {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Gitea"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -156,11 +157,11 @@ func (h *Handler) HandleVerify(w http.ResponseWriter, r *http.Request, repoPath 
 
 // HandleObject handles GET and PUT /<repo>/info/lfs/objects/<oid> (mainly for local storage)
 func (h *Handler) HandleObject(w http.ResponseWriter, r *http.Request, repoPath, subPath string) {
-	username := h.gcmHandler.ExtractUsername(r)
 	oid := strings.TrimPrefix(subPath, "info/lfs/objects/")
 
 	if r.Method == http.MethodPut {
-		if !h.aclMgr.CanWrite(username, repoPath) {
+		username, tokenAllowed := h.gcmHandler.AuthenticateRequest(r, repoPath, true)
+		if !tokenAllowed || !h.aclMgr.CanWrite(username, repoPath) {
 			if username == "" {
 				w.Header().Set("WWW-Authenticate", `Basic realm="Gitea"`)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -174,7 +175,8 @@ func (h *Handler) HandleObject(w http.ResponseWriter, r *http.Request, repoPath,
 	}
 
 	if r.Method == http.MethodGet {
-		if !h.aclMgr.CanRead(username, repoPath) {
+		username, tokenAllowed := h.gcmHandler.AuthenticateRequest(r, repoPath, false)
+		if !h.aclMgr.CanRead(username, repoPath) || (username != "" && !tokenAllowed) {
 			if username == "" {
 				w.Header().Set("WWW-Authenticate", `Basic realm="Gitea"`)
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
