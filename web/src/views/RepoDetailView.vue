@@ -146,7 +146,7 @@
                   <div class="font-semibold text-github-muted px-2 py-1 uppercase text-[10px] tracking-wider">Switch branches</div>
                   <div class="max-h-56 overflow-y-auto divide-y divide-github-border/30">
                     <button
-                      v-for="b in repoInfo.branches"
+                      v-for="b in branchList"
                       :key="b"
                       @click="selectBranch(b)"
                       class="w-full text-left px-2 py-1.5 hover:bg-github-dark rounded flex items-center justify-between text-xs font-mono transition-colors"
@@ -160,7 +160,7 @@
               </div>
 
               <span class="text-xs text-github-muted">
-                {{ repoInfo.branches.length }} branch{{ repoInfo.branches.length === 1 ? '' : 'es' }}
+                {{ branchList.length }} branch{{ branchList.length === 1 ? '' : 'es' }}
               </span>
             </div>
           </div>
@@ -534,6 +534,11 @@ const repoPath = computed(() => {
 
 const currentTab = computed(() => {
   return (route.query.tab as string) || 'code'
+})
+
+const branchList = computed<string[]>(() => {
+  if (!repoInfo.value?.branches) return []
+  return repoInfo.value.branches.map((b) => (typeof b === 'string' ? b : b.name))
 })
 
 onMounted(async () => {

@@ -44,6 +44,14 @@ export interface ReposResponse {
   repos: RepoSummary[]
 }
 
+export interface BranchItem {
+  name: string
+  is_default: boolean
+  commit_hash?: string
+  author_date?: string
+  commit_msg?: string
+}
+
 export interface RepoDetail {
   path: string
   visibility: string
@@ -52,7 +60,7 @@ export interface RepoDetail {
   can_write: boolean
   is_admin: boolean
   default_branch: string
-  branches: string[]
+  branches: (string | BranchItem)[]
   clone_url: string
   collaborators?: Record<string, string>
 }
