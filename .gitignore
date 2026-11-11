@@ -5,9 +5,9 @@ data/
 
 # Node & Frontend Build Artifacts
 node_modules/
-dist/
 web/dist/
-internal/web/dist/
+internal/web/dist/*
+!internal/web/dist/.gitkeep
 *.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
