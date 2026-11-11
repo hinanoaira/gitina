@@ -32,6 +32,12 @@ lfs:
     access_key_id: "YOUR_ACCESS_KEY"
     secret_access_key: "YOUR_SECRET_KEY"
     use_path_style: false
+  # Automatic Garbage Collection for unused LFS objects
+  gc:
+    enabled: true            # Set to true to periodically purge unreferenced LFS objects
+    interval_hours: 24       # Run GC check every 24 hours
+    grace_period_days: 7     # Protect unreferenced objects newer than 7 days
+    dry_run: false           # Set to true to simulate GC without actually deleting objects
 
 # GitHub OAuth Application Configuration
 github:
