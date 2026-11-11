@@ -108,6 +108,9 @@ func (r *RepoReader) ListCommits(ref string, limit int) ([]CommitInfo, error) {
 	if ref == "" {
 		ref = r.GetDefaultBranch()
 	}
+	if strings.HasPrefix(ref, "-") {
+		return nil, errors.New("invalid ref name")
+	}
 	if limit <= 0 {
 		limit = 30
 	}
@@ -152,6 +155,9 @@ func (r *RepoReader) ListTree(ref, subPath string) ([]TreeEntry, error) {
 	if ref == "" {
 		ref = r.GetDefaultBranch()
 	}
+	if strings.HasPrefix(ref, "-") {
+		return nil, errors.New("invalid ref name")
+	}
 	subPath = strings.Trim(subPath, "/")
 
 	treeRef := ref
@@ -159,7 +165,7 @@ func (r *RepoReader) ListTree(ref, subPath string) ([]TreeEntry, error) {
 		treeRef = fmt.Sprintf("%s:%s", ref, subPath)
 	}
 
-	cmd := exec.Command("git", "--git-dir", r.repoDir, "ls-tree", "-l", treeRef)
+	cmd := exec.Command("git", "--git-dir", r.repoDir, "ls-tree", "-l", "--", treeRef)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -211,10 +217,13 @@ func (r *RepoReader) GetBlob(ref, filePath string) (*BlobContent, error) {
 	if ref == "" {
 		ref = r.GetDefaultBranch()
 	}
+	if strings.HasPrefix(ref, "-") {
+		return nil, errors.New("invalid ref name")
+	}
 	filePath = strings.Trim(filePath, "/")
 	target := fmt.Sprintf("%s:%s", ref, filePath)
 
-	cmd := exec.Command("git", "--git-dir", r.repoDir, "cat-file", "-p", target)
+	cmd := exec.Command("git", "--git-dir", r.repoDir, "cat-file", "-p", "--", target)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err

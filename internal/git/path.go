@@ -47,11 +47,20 @@ func ParseURLPath(urlPath string) (*ParsedRequest, error) {
 
 	// Try matching against known Git and LFS endpoints
 	for _, ep := range gitEndpoints {
-		idx := strings.Index("/"+urlPath, ep)
+		normPath := "/" + urlPath
+		idx := strings.Index(normPath, ep)
 		if idx != -1 {
+			// Special handling for /HEAD: must be at end of path or followed by / or ?
+			if ep == "/HEAD" {
+				rest := normPath[idx+len(ep):]
+				if rest != "" && !strings.HasPrefix(rest, "/") && !strings.HasPrefix(rest, "?") {
+					continue
+				}
+			}
+
 			// Extract repo part before ep
-			repoPart := ("/" + urlPath)[:idx]
-			subPart := ("/" + urlPath)[idx:]
+			repoPart := normPath[:idx]
+			subPart := normPath[idx:]
 
 			repoPart = strings.Trim(repoPart, "/")
 			subPart = strings.Trim(subPart, "/")

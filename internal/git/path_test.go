@@ -69,6 +69,30 @@ func TestParseURLPath(t *testing.T) {
 			wantLFS:  false,
 		},
 		{
+			input:    "/team/HEAD.git/info/refs",
+			wantRepo: "team/HEAD.git",
+			wantSub:  "info/refs",
+			wantLFS:  false,
+		},
+		{
+			input:    "/HEAD-repo.git/git-upload-pack",
+			wantRepo: "HEAD-repo.git",
+			wantSub:  "git-upload-pack",
+			wantLFS:  false,
+		},
+		{
+			input:    "/HEAD-repo.git/HEAD",
+			wantRepo: "HEAD-repo.git",
+			wantSub:  "HEAD",
+			wantLFS:  false,
+		},
+		{
+			input:    "/team/HEAD.git/info/lfs/objects/batch",
+			wantRepo: "team/HEAD.git",
+			wantSub:  "info/lfs/objects/batch",
+			wantLFS:  true,
+		},
+		{
 			input:   "/.hidden/repo.git",
 			wantErr: true,
 		},
