@@ -149,7 +149,11 @@ func (h *GCMHandler) HandleGitHubCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	// If the redirect URI is a web path (starts with "/" or matches BaseURL), set web session cookie
-	if strings.HasPrefix(sess.GCMRedirectURI, "/") || strings.HasPrefix(sess.GCMRedirectURI, h.cfg.Server.BaseURL) {
+	isLocalPath := strings.HasPrefix(sess.GCMRedirectURI, "/") &&
+		!strings.HasPrefix(sess.GCMRedirectURI, "//") &&
+		!strings.HasPrefix(sess.GCMRedirectURI, "/\\")
+
+	if isLocalPath || strings.HasPrefix(sess.GCMRedirectURI, h.cfg.Server.BaseURL) {
 		token, _, err := h.tokenMgr.GenerateAccessToken(githubUser)
 		if err == nil {
 			http.SetCookie(w, &http.Cookie{
@@ -162,7 +166,7 @@ func (h *GCMHandler) HandleGitHubCallback(w http.ResponseWriter, r *http.Request
 			})
 		}
 		dest := sess.GCMRedirectURI
-		if dest == "" {
+		if dest == "" || (!isLocalPath && !strings.HasPrefix(dest, h.cfg.Server.BaseURL)) {
 			dest = "/"
 		}
 		http.Redirect(w, r, dest, http.StatusFound)

@@ -627,6 +627,22 @@ func (h *Handler) HandleAPIRepoDetail(w http.ResponseWriter, r *http.Request, re
 	}
 }
 
+func (h *Handler) validateFolderPath(p string) (string, error) {
+	if strings.Contains(p, "..") {
+		return "", errors.New("invalid path containing '..'")
+	}
+	clean := strings.Trim(filepath.ToSlash(filepath.Clean(p)), "/")
+	if clean == "" || clean == "." {
+		return "", errors.New("missing folder path")
+	}
+	full := filepath.Join(h.cfg.Server.RepoRoot, filepath.FromSlash(clean))
+	rel, err := filepath.Rel(h.cfg.Server.RepoRoot, full)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
+		return "", errors.New("path outside repository root")
+	}
+	return clean, nil
+}
+
 // HandleAPIFolders handles metadata configuration for folders.
 // Endpoints:
 // - POST /api/v1/folders/visibility: { "path": "path/to/folder", "visibility": "public"|"unlisted"|"private" }
@@ -656,9 +672,9 @@ func (h *Handler) HandleAPIFolders(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "Invalid JSON payload")
 			return
 		}
-		cleanPath := strings.Trim(filepath.ToSlash(req.Path), "/")
-		if cleanPath == "" {
-			writeError(w, http.StatusBadRequest, "Missing folder path")
+		cleanPath, err := h.validateFolderPath(req.Path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		vis := req.Visibility
@@ -686,10 +702,14 @@ func (h *Handler) HandleAPIFolders(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "Invalid JSON payload")
 			return
 		}
-		cleanPath := strings.Trim(filepath.ToSlash(req.Path), "/")
+		cleanPath, err := h.validateFolderPath(req.Path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		collabUser := strings.TrimSpace(req.Username)
-		if cleanPath == "" || collabUser == "" {
-			writeError(w, http.StatusBadRequest, "Missing path or username")
+		if collabUser == "" {
+			writeError(w, http.StatusBadRequest, "Missing username")
 			return
 		}
 
