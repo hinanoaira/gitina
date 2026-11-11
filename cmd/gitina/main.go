@@ -146,6 +146,10 @@ func runServeCmd(globalConfig string, args []string) {
 
 	lfsHandler := lfs.NewHandler(cfg, storage, aclMgr, gcmHandler)
 
+	// LFS Automatic Garbage Collector Worker
+	lfsGC := lfs.NewGarbageCollector(cfg.Server.RepoRoot, storage, cfg.LFS.GC)
+	lfsGC.StartWorker(context.Background())
+
 	// 4. Tiered Storage Manager (S3 as master, local SSD as LRU cache)
 	tieredMgr, err := tiered.NewManager(context.Background(), cfg)
 	if err != nil {
