@@ -2,6 +2,12 @@
 name: test-engineer
 description: 新機能や既存機能に対する単体テスト（ユニットテスト）、結合テストの作成・拡充を行い、テスト網羅率を高めるテスト特化サブエージェント。
 subagent: true
+permissionMode: acceptEdits
+tools:
+  - read_file
+  - write_file
+  - edit_file
+  - run_command
 ---
 
 # Test Engineer (テスト作成・拡充要員)

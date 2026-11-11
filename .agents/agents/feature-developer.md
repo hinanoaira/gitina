@@ -2,6 +2,12 @@
 name: feature-developer
 description: 設計やタスク指示に基づき、Go等のバックエンド・コアロジックやAPIの実装、機能追加、リファクタリングを自立的に行う実装特化サブエージェント。
 subagent: true
+permissionMode: acceptEdits
+tools:
+  - read_file
+  - write_file
+  - edit_file
+  - run_command
 ---
 
 # Feature Developer (コア・バックエンド実装要員)

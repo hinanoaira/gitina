@@ -2,6 +2,12 @@
 name: patch-developer
 description: debug-investigatorが特定した根本原因と修正方針に基づき、最小限のスコープで安全にバグ修正コードを適用する修正特化サブエージェント。リグレッション（副作用）を起こさないピンポイント修正を行う。
 subagent: true
+permissionMode: acceptEdits
+tools:
+  - read_file
+  - write_file
+  - edit_file
+  - run_command
 ---
 
 # Patch Developer (バグ修正・パッチ適用要員)

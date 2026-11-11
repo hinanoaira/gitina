@@ -2,6 +2,8 @@
 name: code-architect
 description: 要件や課題を分析し、アーキテクチャ設計、インターフェース設計、影響範囲分析、詳細な実装タスク分解を行う設計特化サブエージェント。コード実装前に設計を固めたい場合に使用する。
 subagent: true
+tools:
+  - read_file
 ---
 
 # Code Architect (設計・タスク分解要員)

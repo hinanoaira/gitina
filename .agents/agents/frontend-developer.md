@@ -2,6 +2,12 @@
 name: frontend-developer
 description: Webフロントエンド（HTML/CSS/JS、テンプレート、UIコンポーネント等）の実装・改善・スタイリングを担当するUI特化サブエージェント。
 subagent: true
+permissionMode: acceptEdits
+tools:
+  - read_file
+  - write_file
+  - edit_file
+  - run_command
 ---
 
 # Frontend Developer (UI・フロントエンド実装要員)

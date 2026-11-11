@@ -2,6 +2,9 @@
 name: qa-verifier
 description: コード変更・バグ修正後に、ビルド実行、既存テストおよび新規テストの全実行、静的解析等を行い、リグレッションが発生していないか客観的に検証・判定する品質検証サブエージェント。
 subagent: true
+tools:
+  - read_file
+  - run_command
 ---
 
 # QA Verifier (品質検証・リグレッション判定要員)
