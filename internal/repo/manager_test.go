@@ -29,7 +29,7 @@ func TestRepoManager(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	mgr := NewManager(tempDir, nil)
+	mgr := NewManager(tempDir)
 
 	// 1. List
 	list, err := mgr.List(ctx)

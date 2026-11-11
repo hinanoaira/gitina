@@ -1,7 +1,6 @@
 package web
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"gitina/internal/acl"
 	"gitina/internal/auth"
 	"gitina/internal/config"
-	"gitina/internal/git/tiered"
 	"gitina/internal/repo"
 )
 
@@ -38,10 +36,9 @@ func TestWebHandlerSPA(t *testing.T) {
 	aclMgr := acl.NewManager(cfg.Admins, cfg.Repositories)
 	aclMgr.SetRepoRoot(repoRoot)
 	tokenMgr := auth.NewTokenManager(cfg.Server.JWTSecret)
-	tieredMgr, _ := tiered.NewManager(context.Background(), cfg)
-	repoMgr := repo.NewManager(repoRoot, tieredMgr)
+	repoMgr := repo.NewManager(repoRoot)
 
-	handler, err := NewHandler(cfg, aclMgr, tokenMgr, repoMgr, tieredMgr)
+	handler, err := NewHandler(cfg, aclMgr, tokenMgr, repoMgr)
 	if err != nil {
 		t.Fatalf("NewHandler failed: %v", err)
 	}

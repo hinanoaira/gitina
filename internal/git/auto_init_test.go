@@ -1,7 +1,6 @@
 package git
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"gitina/internal/acl"
 	"gitina/internal/auth"
 	"gitina/internal/config"
-	"gitina/internal/git/tiered"
 )
 
 func TestCloneUncreatedRepoAutoInit(t *testing.T) {
@@ -31,20 +29,13 @@ func TestCloneUncreatedRepoAutoInit(t *testing.T) {
 			BaseURL:   "http://localhost:8080",
 		},
 		Admins: []string{"admin_user"},
-		RepositoryStorage: config.RepositoryStorageConfig{
-			Type: "local",
-		},
 	}
 
 	aclMgr := acl.NewManager(cfg.Admins, nil)
 	tokenMgr := auth.NewTokenManager(cfg.Server.JWTSecret)
 	gcmHandler := auth.NewGCMHandler(cfg, tokenMgr, aclMgr)
-	tieredMgr, err := tiered.NewManager(context.Background(), cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	handler, err := NewHandler(cfg, aclMgr, gcmHandler, nil, tieredMgr)
+	handler, err := NewHandler(cfg, aclMgr, gcmHandler, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

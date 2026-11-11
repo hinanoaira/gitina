@@ -77,9 +77,9 @@ func setupTestAPIEnv(t *testing.T) (*Handler, string, func()) {
 	tokenMgr := auth.NewTokenManager(cfg.Server.JWTSecret)
 	patStore, _ := auth.NewPATStore(filepath.Join(repoRoot, ".tokens.json"))
 	tokenMgr.SetPATStore(patStore)
-	repoMgr := repo.NewManager(repoRoot, nil)
+	repoMgr := repo.NewManager(repoRoot)
 
-	handler, err := NewHandler(cfg, aclMgr, tokenMgr, repoMgr, nil)
+	handler, err := NewHandler(cfg, aclMgr, tokenMgr, repoMgr)
 	if err != nil {
 		t.Fatalf("failed to create web handler: %v", err)
 	}
