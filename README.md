@@ -1,5 +1,12 @@
 # gitina
 
+Gitina was created with only minimal direction provided by a developer who is a full-stack engineer, Aira Hinano (@hinanoaira), and is implemented by Google Antigravity/Gemini.
+In other words, it is a program made by the LLMs you all hate so much.
+
+Why?
+
+B E C A U S E  I ' M  B U S Y !
+
 超軽量・高性能なプライベートGitサーバー＆リポジトリビューア。
 
 - **超軽量＆ゼロ外部依存**: Go言語単一バイナリ設計。Node.jsや重厚なDBは一切不要。
