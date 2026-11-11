@@ -167,7 +167,7 @@ func (gc *GarbageCollector) ScanReachableOIDs(ctx context.Context) (map[string]s
 		default:
 		}
 
-		oids, err := scanRepoLFSPointers(repoDir)
+		oids, err := scanRepoLFSPointers(ctx, repoDir)
 		if err != nil {
 			log.Printf("[LFS GC] Warning: failed to scan pointers in %s: %v", repoDir, err)
 			continue
@@ -215,9 +215,9 @@ func isBareRepo(path string) bool {
 }
 
 // scanRepoLFSPointers runs rev-list on all refs filtering small blobs to find LFS pointers.
-func scanRepoLFSPointers(repoDir string) ([]string, error) {
+func scanRepoLFSPointers(ctx context.Context, repoDir string) ([]string, error) {
 	// git rev-list --objects --all --filter=blob:limit=1k
-	cmd := exec.Command("git", "--git-dir", repoDir, "rev-list", "--objects", "--all", "--filter=blob:limit=1k")
+	cmd := exec.CommandContext(ctx, "git", "--git-dir", repoDir, "rev-list", "--objects", "--all", "--filter=blob:limit=1k")
 	out, err := cmd.Output()
 	if err != nil {
 		// Empty repository or no commits
@@ -244,15 +244,17 @@ func scanRepoLFSPointers(repoDir string) ([]string, error) {
 
 	// Use git cat-file --batch-check and --batch to efficiently extract LFS OIDs
 	// Batch check if object is a blob of size around 100-200 bytes
-	return extractOIDsFromBlobs(repoDir, blobHashes)
+	return extractOIDsFromBlobs(ctx, repoDir, blobHashes)
 }
 
-func extractOIDsFromBlobs(repoDir string, hashes []string) ([]string, error) {
-	cmd := exec.Command("git", "--git-dir", repoDir, "cat-file", "--batch")
+func extractOIDsFromBlobs(ctx context.Context, repoDir string, hashes []string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", "--git-dir", repoDir, "cat-file", "--batch")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
 	}
+	defer stdin.Close()
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -303,9 +305,11 @@ func extractOIDsFromBlobs(repoDir string, hashes []string) ([]string, error) {
 	}()
 
 	for _, h := range hashes {
-		fmt.Fprintf(stdin, "%s\n", h)
+		if _, err := fmt.Fprintf(stdin, "%s\n", h); err != nil {
+			break
+		}
 	}
-	stdin.Close()
+	_ = stdin.Close()
 
 	if err := <-readDone; err != nil {
 		_ = cmd.Wait()
