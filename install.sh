@@ -64,13 +64,23 @@ if [ -f "${SCRIPT_DIR}/gitina" ]; then
     cp -f "${SCRIPT_DIR}/gitina" "${BIN_PATH}"
 elif command -v go >/dev/null 2>&1; then
     echo "Goコンパイラを検出しました。ソースからビルドします..."
-    (cd "${SCRIPT_DIR}" && go build -o "${TMP_BIN}" ./cmd/gitina)
+    # If fnm/node/npm is available, build frontend first
+    if [ -d "${SCRIPT_DIR}/web" ]; then
+        if command -v fnm >/dev/null 2>&1; then
+            echo "fnmを検出しました。フロントエンドをビルドします..."
+            (cd "${SCRIPT_DIR}/web" && eval "$(fnm env)" && npm install && npm run build) || true
+        elif command -v npm >/dev/null 2>&1; then
+            echo "npmを検出しました。フロントエンドをビルドします..."
+            (cd "${SCRIPT_DIR}/web" && npm install && npm run build) || true
+        fi
+    fi
+    (cd "${SCRIPT_DIR}" && go build -ldflags="-s -w" -o "${TMP_BIN}" ./cmd/gitina)
     cp -f "${TMP_BIN}" "${BIN_PATH}"
     rm -f "${TMP_BIN}"
 else
     echo "エラー: 'gitina' バイナリが見つからず、'go' コマンドもインストールされていません。" >&2
     echo "以下のいずれかを実行してください:" >&2
-    echo "  1) あらかじめ手元で 'go build -o gitina ./cmd/gitina' を実行してスクリプトと同じ場所に配置する" >&2
+    echo "  1) あらかじめ手元で 'make build' を実行してスクリプトと同じ場所に配置する" >&2
     echo "  2) 'sudo apt-get install -y golang' で Go をインストールしてから再実行する" >&2
     exit 1
 fi

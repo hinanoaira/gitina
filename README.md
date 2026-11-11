@@ -34,7 +34,20 @@ sudo ./install.sh
 
 #### ビルド
 ```bash
-go build -o gitina ./cmd/gitina
+# Vue 3 フロントエンドと Go バイナリの一括ビルド
+make build
+
+# または Go のみビルド (事前ビルド済みアセットを使用)
+make build-go
+```
+
+#### フロントエンド開発 (Dev Mode)
+```bash
+# Vite 開発サーバー (HMR & バックエンドAPIプロキシ)
+make dev-web
+
+# Go サーバーの起動
+make dev-go
 ```
 
 #### 設定ファイルの準備
