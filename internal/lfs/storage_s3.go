@@ -147,3 +147,79 @@ func (s *S3Storage) ServeObject(w http.ResponseWriter, r *http.Request, repoPath
 func (s *S3Storage) PutObject(w http.ResponseWriter, r *http.Request, repoPath, oid string) {
 	http.Error(w, "direct object upload is handled via S3 Presigned URL", http.StatusBadRequest)
 }
+
+// ListObjects lists all LFS objects under prefix "lfs/" in the S3 bucket.
+func (s *S3Storage) ListObjects(ctx context.Context) ([]StorageObject, error) {
+	var objects []StorageObject
+	prefix := "lfs/"
+
+	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(prefix),
+	})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list s3 lfs objects: %w", err)
+		}
+
+		for _, item := range page.Contents {
+			key := aws.ToString(item.Key)
+			parts := strings.Split(key, "/")
+			oid := parts[len(parts)-1]
+			if len(oid) != 64 {
+				continue
+			}
+
+			var modTime time.Time
+			if item.LastModified != nil {
+				modTime = *item.LastModified
+			}
+
+			objects = append(objects, StorageObject{
+				OID:          oid,
+				Size:         aws.ToInt64(item.Size),
+				LastModified: modTime,
+			})
+		}
+	}
+
+	return objects, nil
+}
+
+// DeleteObjects deletes the specified objects in batches of up to 1000 from S3.
+func (s *S3Storage) DeleteObjects(ctx context.Context, oids []string) error {
+	if len(oids) == 0 {
+		return nil
+	}
+
+	const batchSize = 1000
+	for i := 0; i < len(oids); i += batchSize {
+		end := i + batchSize
+		if end > len(oids) {
+			end = len(oids)
+		}
+
+		chunk := oids[i:end]
+		var toDelete []types.ObjectIdentifier
+		for _, oid := range chunk {
+			toDelete = append(toDelete, types.ObjectIdentifier{
+				Key: aws.String(s.s3Key(oid)),
+			})
+		}
+
+		_, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: aws.String(s.bucket),
+			Delete: &types.Delete{
+				Objects: toDelete,
+				Quiet:   aws.Bool(true),
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to batch delete s3 lfs objects: %w", err)
+		}
+	}
+
+	return nil
+}

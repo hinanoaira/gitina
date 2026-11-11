@@ -3,7 +3,15 @@ package lfs
 import (
 	"context"
 	"net/http"
+	"time"
 )
+
+// StorageObject represents an object stored in LFS backend.
+type StorageObject struct {
+	OID          string
+	Size         int64
+	LastModified time.Time
+}
 
 type StorageBackend interface {
 	// Exists checks if the object already exists in storage and matches the size.
@@ -23,4 +31,10 @@ type StorageBackend interface {
 
 	// PutObject (for local storage) handles HTTP PUT to store the object from the client.
 	PutObject(w http.ResponseWriter, r *http.Request, repoPath, oid string)
+
+	// ListObjects returns all stored LFS objects across the backend.
+	ListObjects(ctx context.Context) ([]StorageObject, error)
+
+	// DeleteObjects deletes objects by their OIDs.
+	DeleteObjects(ctx context.Context, oids []string) error
 }

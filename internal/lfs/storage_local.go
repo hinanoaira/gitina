@@ -145,3 +145,76 @@ func (s *LocalStorage) PutObject(w http.ResponseWriter, r *http.Request, repoPat
 	w.WriteHeader(http.StatusOK)
 	_ = written
 }
+
+// ListObjects walks the local storage directory and lists all LFS objects.
+func (s *LocalStorage) ListObjects(ctx context.Context) ([]StorageObject, error) {
+	var objects []StorageObject
+
+	err := filepath.WalkDir(s.baseDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		// Check if file is inside incomplete or is a temporary file
+		name := d.Name()
+		if strings.HasPrefix(name, "lfs_tmp_") {
+			return nil
+		}
+
+		// A valid OID is a 64-character lowercase hex string
+		if len(name) != 64 {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+
+		objects = append(objects, StorageObject{
+			OID:          name,
+			Size:         info.Size(),
+			LastModified: info.ModTime(),
+		})
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to walk local lfs storage: %w", err)
+	}
+	return objects, nil
+}
+
+// DeleteObjects deletes the specified objects from local storage.
+func (s *LocalStorage) DeleteObjects(ctx context.Context, oids []string) error {
+	for _, oid := range oids {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		path := s.objectPath(oid)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete local lfs object %s: %w", oid, err)
+		}
+
+		// Attempt to remove parent empty subdirectories (e.g. 12/34/)
+		parent := filepath.Dir(path)
+		_ = os.Remove(parent)
+		grandParent := filepath.Dir(parent)
+		_ = os.Remove(grandParent)
+	}
+	return nil
+}
