@@ -70,7 +70,7 @@
               <Layers class="w-3.5 h-3.5" />
               <span class="uppercase text-[10px] bg-github-dark border border-github-border px-1.5 py-0.2 rounded">{{ repo.storage }}</span>
             </span>
-            <span v-if="repo.is_cached" class="flex items-center space-x-1 text-emerald-400 text-[10px]">
+            <span v-if="repo.storage !== 'local' && repo.is_cached" class="flex items-center space-x-1 text-emerald-400 text-[10px]">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
               <span>Cached</span>
             </span>

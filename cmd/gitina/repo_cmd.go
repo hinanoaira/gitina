@@ -116,9 +116,13 @@ func handleRepoList(globalConfig string, args []string) {
 	fmt.Fprintln(w, "REPOSITORY\tSTORAGE\tCACHED\tSIZE\tLAST MODIFIED")
 
 	for _, r := range list {
-		cachedStr := "yes"
-		if !r.IsCached {
-			cachedStr = "no"
+		cachedStr := "-"
+		if r.Storage != "local" {
+			if r.IsCached {
+				cachedStr = "yes"
+			} else {
+				cachedStr = "no"
+			}
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			r.Path,

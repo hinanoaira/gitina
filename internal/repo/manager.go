@@ -120,7 +120,7 @@ func (m *Manager) listLocal() ([]RepoInfo, error) {
 				Path:      rel,
 				DiskSize:  size,
 				UpdatedAt: updated,
-				IsCached:  true,
+				IsCached:  false,
 				Storage:   "local",
 			})
 			return filepath.SkipDir // no need to dive into this repo
