@@ -8,6 +8,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -176,6 +177,34 @@ func (h *Handler) HandleAPIRepos(w http.ResponseWriter, r *http.Request) {
 		}
 		visibleFolders = append(visibleFolders, fItem)
 	}
+
+	// Sort folders alphabetically / lexicographically (case-insensitive)
+	sort.Slice(visibleFolders, func(i, j int) bool {
+		si := strings.ToLower(visibleFolders[i].Name)
+		sj := strings.ToLower(visibleFolders[j].Name)
+		if si == sj {
+			return visibleFolders[i].Name < visibleFolders[j].Name
+		}
+		return si < sj
+	})
+
+	// Sort repositories alphabetically / lexicographically (case-insensitive)
+	sort.Slice(visibleRepos, func(i, j int) bool {
+		nameI := visibleRepos[i].Name
+		if nameI == "" {
+			nameI = visibleRepos[i].Path
+		}
+		nameJ := visibleRepos[j].Name
+		if nameJ == "" {
+			nameJ = visibleRepos[j].Path
+		}
+		si := strings.ToLower(nameI)
+		sj := strings.ToLower(nameJ)
+		if si == sj {
+			return nameI < nameJ
+		}
+		return si < sj
+	})
 
 	// Also get current folder metadata if inside a folder
 	var currentFolderMeta map[string]interface{}

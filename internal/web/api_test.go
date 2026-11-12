@@ -265,3 +265,101 @@ func TestAPIReposAndTree(t *testing.T) {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestAPIReposSorting(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gitina-sort-test-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	repoRoot := filepath.Join(tmpDir, "repos")
+	_ = os.MkdirAll(repoRoot, 0755)
+
+	// Create repositories out of order:
+	// Repos in root: zebra.git, apple.git, banana.git
+	// Folders: z-folder/r1.git, a-folder/r2.git, m-folder/r3.git
+	repoNames := []string{
+		"zebra.git",
+		"apple.git",
+		"banana.git",
+		filepath.Join("z-folder", "r1.git"),
+		filepath.Join("a-folder", "r2.git"),
+		filepath.Join("m-folder", "r3.git"),
+	}
+
+	for _, name := range repoNames {
+		p := filepath.Join(repoRoot, name)
+		_ = os.MkdirAll(p, 0755)
+		_ = os.WriteFile(filepath.Join(p, "HEAD"), []byte("ref: refs/heads/main\n"), 0644)
+	}
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			RepoRoot:  repoRoot,
+			BaseURL:   "http://localhost:8080",
+			JWTSecret: "test-secret-long-enough-for-hs256-signing-must-be-32-bytes",
+		},
+		Admins: []string{"admin_user"},
+	}
+
+	aclMgr := acl.NewManager(cfg.Admins, cfg.Repositories)
+	aclMgr.SetRepoRoot(repoRoot)
+	tokenMgr := auth.NewTokenManager(cfg.Server.JWTSecret)
+	repoMgr := repo.NewManager(repoRoot)
+
+	handler, err := NewHandler(cfg, aclMgr, tokenMgr, repoMgr)
+	if err != nil {
+		t.Fatalf("failed to create handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/repos", nil)
+	wSession := httptest.NewRecorder()
+	handler.SetUserSession(wSession, "admin_user")
+	cookies := wSession.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatalf("expected session cookie, got none")
+	}
+	sessionCookie := cookies[0]
+	req.AddCookie(sessionCookie)
+
+	w := httptest.NewRecorder()
+	handled := handler.ServeAPI(w, req)
+	if !handled || w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got code %d", w.Code)
+	}
+
+	var resp struct {
+		Folders []struct {
+			Name string `json:"name"`
+		} `json:"folders"`
+		Repos []struct {
+			Name string `json:"name"`
+		} `json:"repos"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse JSON response: %v", err)
+	}
+
+	// Verify folders sorted alphabetically
+	expectedFolders := []string{"a-folder", "m-folder", "z-folder"}
+	if len(resp.Folders) != len(expectedFolders) {
+		t.Fatalf("expected %d folders, got %d", len(expectedFolders), len(resp.Folders))
+	}
+	for i, f := range resp.Folders {
+		if f.Name != expectedFolders[i] {
+			t.Errorf("folder[%d]: expected %s, got %s", i, expectedFolders[i], f.Name)
+		}
+	}
+
+	// Verify repos sorted alphabetically
+	expectedRepos := []string{"apple.git", "banana.git", "zebra.git"}
+	if len(resp.Repos) != len(expectedRepos) {
+		t.Fatalf("expected %d repos, got %d", len(expectedRepos), len(resp.Repos))
+	}
+	for i, r := range resp.Repos {
+		if r.Name != expectedRepos[i] {
+			t.Errorf("repo[%d]: expected %s, got %s", i, expectedRepos[i], r.Name)
+		}
+	}
+}
