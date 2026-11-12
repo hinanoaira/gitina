@@ -302,15 +302,21 @@ const currentFolder = computed(() => {
 })
 
 const filteredFolders = computed(() => {
-  if (!searchQuery.value) return folders.value
-  const q = searchQuery.value.toLowerCase()
-  return folders.value.filter(f => f.name.toLowerCase().includes(q))
+  let list = folders.value
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    list = list.filter(f => f.name.toLowerCase().includes(q))
+  }
+  return [...list].sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }))
 })
 
 const filteredRepos = computed(() => {
-  if (!searchQuery.value) return repos.value
-  const q = searchQuery.value.toLowerCase()
-  return repos.value.filter(r => (r.name || r.path).toLowerCase().includes(q))
+  let list = repos.value
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    list = list.filter(r => (r.name || r.path).toLowerCase().includes(q))
+  }
+  return [...list].sort((a, b) => (a.name || a.path).localeCompare(b.name || b.path, 'ja', { numeric: true }))
 })
 
 onMounted(async () => {
@@ -329,8 +335,12 @@ async function loadData() {
   error.value = ''
   try {
     const res = await api.getRepos(currentFolder.value)
-    repos.value = res.repos || []
-    folders.value = res.folders || []
+    repos.value = (res.repos || []).sort((a, b) =>
+      (a.name || a.path).localeCompare(b.name || b.path, 'ja', { numeric: true })
+    )
+    folders.value = (res.folders || []).sort((a, b) =>
+      a.name.localeCompare(b.name, 'ja', { numeric: true })
+    )
     breadcrumbs.value = res.breadcrumbs || []
     currentFolderMeta.value = res.current_folder_meta || null
   } catch (err: any) {
